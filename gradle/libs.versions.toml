@@ -1,0 +1,29 @@
+[versions]
+agp = "8.2.0"
+android-compileSdk = "34"
+android-minSdk = "24"
+android-targetSdk = "34"
+basic-source-code-editor = "0.0.4"
+animate-content-single-dimension = "1.0.1"
+kotlin = "2.0.0-Beta5"
+compose = "1.6.10-dev1551"
+compose-stable = "1.6.1"
+androidx-activityCompose = "1.8.2"
+serialization = "1.6.2"
+
+[libraries]
+basic-source-code-editor = { module = "com.zhelenskiy:editor", version.ref = "basic-source-code-editor" }
+animate-content-single-dimension = { module = "com.zhelenskiy:animate-content-single-dimension", version.ref = "animate-content-single-dimension" }
+compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling", version.ref = "compose-stable" }
+compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview", version.ref = "compose-stable" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activityCompose" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+serialization = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
+
+[plugins]
+androidLibrary = { id = "com.android.library", version.ref = "agp" }
+androidApplication = { id = "com.android.application", version.ref = "agp" }
+jetbrainsCompose = { id = "org.jetbrains.compose", version.ref = "compose" }
+kotlinMultiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+native-cocoapods = { id = "org.jetbrains.kotlin.native.cocoapods", version.ref = "kotlin" }

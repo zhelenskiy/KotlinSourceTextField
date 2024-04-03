@@ -1,0 +1,22 @@
+product:
+  type: lib
+  platforms: [
+    jvm, android, iosArm64, iosSimulatorArm64, iosX64, 
+  ]
+
+dependencies:
+  - $compose.animation
+  - $compose.components.resources
+  - $compose.foundation
+  - $compose.material3
+  - $compose.materialIconsExtended
+  - $libs.basic.source.code.editor
+  - $libs.animate.content.single.dimension
+
+settings:
+  compose:
+    enabled: true
+    version: 1.6.10-dev1549
+  kotlin:
+    serialization: json
+    languageVersion: 1.9
