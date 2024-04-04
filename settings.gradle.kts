@@ -33,7 +33,7 @@ dependencyResolutionManagement {
     fun getPassword(): String {
         val propertiesFile: File = rootProject.projectDir.resolve("local.properties")
         val properties = if (propertiesFile.exists()) propertiesFile.loadProperties() else mapOf()
-        val githubPersonalToken: String? by properties
+        val githubPersonalToken = properties.getOrDefault("githubPersonalToken", null) as String?
         return githubPersonalToken
             ?: System.getProperty("GITHUB_TOKEN").takeIf { it.isNotEmpty() }
             ?: System.getenv("GITHUB_TOKEN")
