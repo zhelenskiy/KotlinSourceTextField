@@ -27,6 +27,8 @@ jobs:
 
       - name: Build
         run: ./gradlew library:assemble --stacktrace
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Release library
         run: ./gradlew library:publish
