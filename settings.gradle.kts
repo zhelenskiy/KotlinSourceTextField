@@ -35,7 +35,7 @@ dependencyResolutionManagement {
         val properties = if (propertiesFile.exists()) propertiesFile.loadProperties() else mapOf()
         val githubPersonalToken = properties.getOrDefault("githubPersonalToken", null) as String?
         return githubPersonalToken
-            ?: System.getProperty("GITHUB_TOKEN").takeIf { it.isNotEmpty() }
+            ?: System.getProperty("GITHUB_TOKEN", "").takeIf { it.isNotEmpty() }
             ?: System.getenv("GITHUB_TOKEN")
             ?: error("No token found")
     }
