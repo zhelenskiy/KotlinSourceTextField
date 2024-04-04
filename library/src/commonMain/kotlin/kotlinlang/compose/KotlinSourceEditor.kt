@@ -20,14 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.TextField
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -466,14 +459,14 @@ public fun KotlinSourceEditor(
     }
     val coroutineScope = rememberCoroutineScope()
     val showLineNumbers = sourceEditorFeaturesConfiguration.showLineNumbers
-    val pinLines = sourceEditorFeaturesConfiguration.showStickyHeader
+    val stickyHeader = sourceEditorFeaturesConfiguration.showStickyHeader
     val showIndentation = sourceEditorFeaturesConfiguration.showIndentation
     val textSize = measureText(visualSettings.sourceTextStyle)
     val density = LocalDensity.current
-    val pinLinesChooser: (SingleStyleTokenChangingScope) -> IntRange? = { bracket ->
-        choosePinnedLines(bracket, codeTextFieldState, matchedBrackets)
+    val stickyHeaderLinesChooser: (SingleStyleTokenChangingScope) -> IntRange? = { bracket ->
+        chooseStickyHeaderLines(bracket, codeTextFieldState, matchedBrackets)
     }
-    var maximumPinnedLinesHeight: Dp by remember { mutableStateOf(0.dp) }
+    var maximumStickyHeaderLinesHeight: Dp by remember { mutableStateOf(0.dp) }
 
     val (findAndReplaceState, onFindAndReplaceStateChange) = findAndReplaceMutableState
     var showFindAndReplace by showFindAndReplaceState
@@ -606,6 +599,10 @@ public fun KotlinSourceEditor(
                 currentPointerOffset = newOffset
             },
         ) {
+            val visualTransformation = foundMatches?.toVisualTransformation(
+                foundColor = colorScheme.findAndReplaceColorScheme.foundMatchColor,
+                currentFoundColor = colorScheme.findAndReplaceColorScheme.currentFoundMatchColor,
+            ) ?: VisualTransformation.None
             BasicSourceCodeTextField(
                 state = codeTextFieldState,
                 onStateUpdate = onCodeTextFieldStateChange,
@@ -624,10 +621,7 @@ public fun KotlinSourceEditor(
                     .focusRequester(sourceCodeFocusRequester)
                     .onPointerEvent(PointerEventType.Enter) { onEnter() }
                     .onPointerEvent(PointerEventType.Exit) { onExit() },
-                visualTransformation = foundMatches?.toVisualTransformation(
-                    foundColor = colorScheme.findAndReplaceColorScheme.foundMatchColor,
-                    currentFoundColor = colorScheme.findAndReplaceColorScheme.currentFoundMatchColor,
-                ) ?: VisualTransformation.None,
+                visualTransformation = visualTransformation,
                 additionalInnerComposable = { _, _ ->
                     androidx.compose.animation.AnimatedVisibility(
                         visible = showIndentation,
@@ -661,20 +655,21 @@ public fun KotlinSourceEditor(
                     inner()
 
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = pinLines,
+                        visible = stickyHeader,
                         enter = fadeIn(),
                         exit = fadeOut(),
                     ) {
-                        PinnedLines(
+                        StickyHeader(
                             state = codeTextFieldState,
+                            visualTransformation = visualTransformation,
                             textStyle = visualSettings.sourceTextStyle,
                             scrollState = verticalScrollState,
                             showLineNumbers = showLineNumbers,
                             matchedBrackets = matchedBrackets,
-                            pinLinesChooser = pinLinesChooser,
+                            stickyHeaderLinesChooser = stickyHeaderLinesChooser,
                             lineNumbersColor = colorScheme.lineNumbersColor,
-                            maximumPinnedLinesHeight = (visualSettings.stickyHeaderSettings.maximumHeightRatio * maxHeight).also {
-                                maximumPinnedLinesHeight = it
+                            maximumStickyHeaderHeight = (visualSettings.stickyHeaderSettings.maximumHeightRatio * maxHeight).also {
+                                maximumStickyHeaderLinesHeight = it
                             },
                             onClick = {
                                 coroutineScope.launch {
@@ -764,8 +759,20 @@ public fun KotlinSourceEditor(
                                     selection = TextRange(offset)
                                 )
                                 onCodeTextFieldStateChange(newCodeTextFieldState)
+                                coroutineScope.launch {
+                                    externalScrollToFlow.emit(SourceCodePosition(it.line, it.column))
+                                    // workaround for COMPOSE-727
+                                    delay(300)
+                                    val horizontalScrollPosition = horizontalScrollState.value
+                                    val verticalScrollPosition = verticalScrollState.value
+                                    sourceCodeFocusRequester.requestFocus()
+                                    repeat(50) {
+                                        horizontalScrollState.scrollTo(horizontalScrollPosition)
+                                        verticalScrollState.scrollTo(verticalScrollPosition)
+                                        delay(1)
+                                    }
+                                }
                             }
-                            sourceCodeFocusRequester.requestFocus()
                         }
                     }
                     val lineNumbersWidth =
@@ -820,8 +827,8 @@ public fun KotlinSourceEditor(
                             state = codeTextFieldState,
                             matchedBrackets = matchedBrackets,
                             dividerThickness = 0.dp, // do not include divider thickness in the calculation
-                            maximumPinnedLinesHeight = maximumPinnedLinesHeight,
-                            pinLinesChooser = pinLinesChooser,
+                            maximumStickyHeaderHeight = maximumStickyHeaderLinesHeight,
+                            stickyHeaderLinesChooser = stickyHeaderLinesChooser,
                         )
                     )
                 },
@@ -1194,7 +1201,7 @@ private fun BoxScope.CompilerDiagnostic(
     }
 }
 
-private fun choosePinnedLines(
+private fun chooseStickyHeaderLines(
     bracket: SingleStyleTokenChangingScope,
     codeTextFieldState: BasicSourceCodeTextFieldState<KotlinComposeToken>,
     matchedBrackets: Map<SingleStyleTokenChangingScope, SingleStyleTokenChangingScope>,
@@ -1233,7 +1240,7 @@ private fun choosePinnedLines(
         val recursiveParenthesis =
             if (bracket is KotlinComposeToken.Operator.OpeningBrace) openingParenthesis
             else closingParenthesis
-        return choosePinnedLines(recursiveParenthesis, codeTextFieldState, matchedBrackets)
+        return chooseStickyHeaderLines(recursiveParenthesis, codeTextFieldState, matchedBrackets)
     }
     return null
 }

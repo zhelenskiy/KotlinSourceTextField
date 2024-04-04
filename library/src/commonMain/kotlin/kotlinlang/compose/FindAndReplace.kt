@@ -102,6 +102,7 @@ public data class FindAndReplaceSettings(
     val defaultRegexErrorMessage: String = "A pattern error occurred",
     val badPatternMessage: String = "Bad pattern",
     val notFoundMessage: String = "Not found",
+    val notifyAboutRegexErrorsOnFly: Boolean = false,
 ) {
     init {
         require(superCompactModeThreshold <= compactModeThreshold) {
@@ -161,9 +162,6 @@ internal fun FoundMatches.toVisualTransformation(
     TransformedText(newAnnotatedString, OffsetMapping.Identity)
 }
 
-private fun getRegexReplacementStringErrorMessage(s: String) =
-    runCatching { Regex("a").replace("a", s) }.exceptionOrNull()?.message
-
 @OptIn(ExperimentalResourceApi::class)
 @Composable
 internal fun FindAndReplacePopup(
@@ -186,8 +184,8 @@ internal fun FindAndReplacePopup(
     var isFindRegexError by remember { mutableStateOf(false) }
     var isReplaceRegexError by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isFindRegexError, lastErrorMessage) {
-        if (isFindRegexError) {
+    LaunchedEffect(isFindRegexError, lastErrorMessage, settings.notifyAboutRegexErrorsOnFly) {
+        if (isFindRegexError && settings.notifyAboutRegexErrorsOnFly) {
             onPatternError(lastErrorMessage)
         }
     }
@@ -199,16 +197,15 @@ internal fun FindAndReplacePopup(
         popupState.isFullWord,
         popupState.matchCase,
     ) {
-        if (popupState.findString.isEmpty()) {
-            isFindRegexError = false
-            onMatchedResultChange(null)
-            return@LaunchedEffect
-        }
-
         val regex = makeRegexSafely(popupState)
             .also { isFindRegexError = it.isFailure }
             .onFailure { lastErrorMessage = it.message ?: settings.defaultRegexErrorMessage }
             .getOrNull() ?: return@LaunchedEffect
+
+        if (popupState.findString.isEmpty()) {
+            onMatchedResultChange(null)
+            return@LaunchedEffect
+        }
 
         yield()
 
@@ -219,10 +216,14 @@ internal fun FindAndReplacePopup(
         )
     }
 
-    LaunchedEffect(popupState.isRegex, popupState.replaceString) {
-        val errorMessage = if (popupState.isRegex) getRegexReplacementStringErrorMessage(popupState.replaceString) else null
-        isReplaceRegexError = errorMessage != null
-        if (errorMessage != null) onPatternError(errorMessage)
+    LaunchedEffect(popupState, codeTextFieldState.text) {
+        if (popupState.isRegex) {
+            Dispatchers.IO {
+                isReplaceRegexError = makeRegexSafely(popupState)
+                    .mapCatching { it.replace(codeTextFieldState.text, popupState.replaceString) }
+                    .isFailure
+            }
+        }
     }
 
     LaunchedEffect(matchResults, codeTextFieldState.selection) {
@@ -616,15 +617,16 @@ private fun ReplaceButtons(
     ) {
         Button(
             onClick = {
-                if (index != null) {
-                    coroutineScope.launch {
-                        val newState = makeReplacement(
-                            codeTextFieldState = codeTextFieldState,
-                            popupState = popupState,
-                            index = index,
-                            onPatternError = onPatternError,
-                            settings = settings,
-                        )
+                coroutineScope.launch {
+                    val newState = makeReplacement(
+                        codeTextFieldState = codeTextFieldState,
+                        popupState = popupState,
+                        index = index,
+                        onPatternError = onPatternError,
+                        settings = settings,
+                    )
+                    // pattern errors should be reported anyway
+                    if (index != null) {
                         newState?.let(onReplaced)
                     }
                 }
@@ -650,7 +652,10 @@ private fun ReplaceButtons(
                         onPatternError = onPatternError,
                         settings = settings,
                     )
-                    newState?.let(onReplaced)
+                    // pattern errors should be reported anyway
+                    if (index != null) {
+                        newState?.let(onReplaced)
+                    }
                 }
                 sourceCodeFocusRequester.requestFocus()
             },
@@ -694,7 +699,14 @@ private suspend fun makeReplacement(
         .map { it.groups[1]!!.value }.toList()
     val allMatches = regex.findAll(codeTextFieldState.text).toList()
     if (allMatches.size != allReplacements.size) error("Incorrect replacement for: $popupState:\n${codeTextFieldState.text}")
-    if (allMatches.isEmpty() || index != null && index !in allMatches.indices) return null
+    if (allMatches.isEmpty()) {
+        return TextFieldValue(
+            text = codeTextFieldState.text,
+            selection = codeTextFieldState.selection,
+            composition = codeTextFieldState.composition,
+        )
+    }
+    if (index != null && index !in allMatches.indices) return null
     val (matches, replacements) =
         if (index == null) allMatches to allReplacements
         else listOf(allMatches[index]) to listOf(allReplacements[index])
@@ -785,15 +797,25 @@ private fun FindResults(
         Row(Modifier.padding(settings.findResultsHorizontalPadding)) {
             if (!isError && foundMatches != null) {
                 val width = (1..foundMatches.matches.size)
-                    .maxOf { textMeasurer.measure(it.toString()).size.width }
-                Text(
-                    text = "${foundMatches.index + 1}",
+                    .maxOf {
+                        textMeasurer.measure(
+                            text = it.toString(),
+                            style = settings.labelTextStyle,
+                            maxLines = 1,
+                            softWrap = false
+                        ).size.width
+                    }
+                Box(
                     modifier = Modifier
-                        .sizeIn(minWidth = density.run { width.toDp() }),
-                    color = resultsTextColor,
-                    textAlign = TextAlign.End,
-                    style = settings.labelTextStyle,
-                )
+                        .sizeIn(minWidth = density.run { width.toDp() })
+                ) {
+                    Text(
+                        text = "${foundMatches.index + 1}",
+                        color = resultsTextColor,
+                        modifier = Modifier.align(Alignment.CenterEnd),
+                        style = settings.labelTextStyle,
+                    )
+                }
             }
             val text = when {
                 isError -> settings.badPatternMessage
