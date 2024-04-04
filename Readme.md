@@ -8,10 +8,9 @@ This project provides customizable Kotlin source code editor for Compose Multipl
 <img src="readmeMedia/desktop_light.png" style="height: 500px"/>
 </div>
 
-<video width="640" height="480" controls>
-    <source src="readmeMedia/desktop_usage.mp4" type="video/mp4">
-    Your browser does not support the video tag.
-</video>
+
+https://github.com/zhelenskiy/KotlinSourceTextField/assets/55230817/ed87ef26-f5f4-48f4-af40-fd5d3803bc50
+
 
 
 It uses [BasicSourceCodeEditor](https://github.com/zhelenskiy/BasicSourceCodeEditor) under the hood.
