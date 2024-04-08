@@ -179,6 +179,9 @@ internal fun FindAndReplacePopup(
     onReplaced: (TextFieldValue) -> Unit,
     settings: FindAndReplaceSettings,
     exitKeyEvent: KeyEventFilter = KeyEventFilterHolder(key = Key.Escape).toKeyEventFilter(),
+    extraStartPadding: Dp,
+    extraEndPadding: Dp,
+    extraTopPadding: Dp,
 ) {
     var lastErrorMessage by remember { mutableStateOf("") }
     var isFindRegexError by remember { mutableStateOf(false) }
@@ -260,7 +263,10 @@ internal fun FindAndReplacePopup(
 
     Column {
         BoxWithConstraints(
-            modifier = Modifier.background(colorScheme.backgroundColor).padding(settings.padding)
+            modifier = Modifier
+                .background(colorScheme.backgroundColor)
+                .padding(settings.padding)
+                .padding(start = extraStartPadding, end = extraEndPadding, top = extraTopPadding)
         ) {
             val useCompactMode = maxWidth < settings.compactModeThreshold
             val useExtremeCompactMode = maxWidth < settings.superCompactModeThreshold
@@ -306,7 +312,10 @@ internal fun FindAndReplacePopup(
                     ) {
                         BasicTextField(
                             value = popupState.findString,
-                            onValueChange = { onPopupStateChange(popupState.copy(findString = it)); scrollToSelected() },
+                            onValueChange = {
+                                onPopupStateChange(popupState.copy(findString = it))
+                                scrollToSelected()
+                            },
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.None,
                                 autoCorrect = false,

@@ -1,28 +1,16 @@
 package kotlinlang.compose
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateIntAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.background
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.TextField
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -36,6 +24,7 @@ import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.TextFieldValue
@@ -46,9 +35,6 @@ import editor.basic.*
 import kotlinlang.tokens.KotlinToken
 import kotlinlang.tokens.tokenizeKotlin
 import kotlinlang.utils.*
-import kotlinlang.utils.HorizontalScrollbar
-import kotlinlang.utils.VerticalScrollbar
-import kotlinlang.utils.onPointerEvent
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -93,8 +79,12 @@ public data class KotlinSourceEditorSettings(
     val sourceTextStyle: TextStyle,
     val horizontalThresholdEdgeChars: Int = 5,
     val verticalThresholdEdgeLines: Int = 1,
-    val scrollbarsVisibility: ScrollbarsVisibility = ScrollbarsVisibility.Both,
+    val scrollbarsVisibility: ScrollbarsChoice = ScrollbarsChoice.Both,
     val scrollbarsThickness: Dp = 8.dp,
+    val innerPadding: PaddingValues = PaddingValues(0.dp),
+    val applyInnerPaddingToScrollbars: ScrollbarsChoice = ScrollbarsChoice.None,
+    val applyInnerPaddingToDiagnosticsPopup: Boolean = false,
+    val applyInnerPaddingToFindAndReplace: Boolean = true,
     val diagnosticsHighlightingSettings: DiagnosticsHighlightingSettings = DiagnosticsHighlightingSettings(),
     val diagnosticsTooltipSettings: DiagnosticsTooltipSettings = DiagnosticsTooltipSettings(
         scrollbarsVisibility = scrollbarsVisibility,
@@ -114,8 +104,12 @@ public data class KotlinSourceEditorSettings(
 public fun KotlinSourceEditorSettings(
     horizontalThresholdEdgeChars: Int = 5,
     verticalThresholdEdgeLines: Int = 1,
-    scrollbarsVisibility: ScrollbarsVisibility = ScrollbarsVisibility.Both,
+    scrollbarsVisibility: ScrollbarsChoice = ScrollbarsChoice.Both,
     scrollbarsThickness: Dp = 8.dp,
+    innerPadding: PaddingValues = PaddingValues(0.dp),
+    applyInnerPaddingToScrollbars: ScrollbarsChoice = ScrollbarsChoice.None,
+    applyInnerPaddingToDiagnosticsPopup: Boolean = false,
+    applyInnerPaddingToFindAndReplace: Boolean = true,
     diagnosticsHighlightingSettings: DiagnosticsHighlightingSettings = DiagnosticsHighlightingSettings(),
     diagnosticsTooltipSettings: DiagnosticsTooltipSettings = DiagnosticsTooltipSettings(
         scrollbarsVisibility = scrollbarsVisibility,
@@ -137,6 +131,10 @@ public fun KotlinSourceEditorSettings(
     verticalThresholdEdgeLines = verticalThresholdEdgeLines,
     scrollbarsVisibility = scrollbarsVisibility,
     scrollbarsThickness = scrollbarsThickness,
+    innerPadding = innerPadding,
+    applyInnerPaddingToScrollbars = applyInnerPaddingToScrollbars,
+    applyInnerPaddingToDiagnosticsPopup = applyInnerPaddingToDiagnosticsPopup,
+    applyInnerPaddingToFindAndReplace = applyInnerPaddingToFindAndReplace,
     diagnosticsHighlightingSettings = diagnosticsHighlightingSettings,
     diagnosticsTooltipSettings = diagnosticsTooltipSettings,
     indentationLinesSettings = indentationLinesSettings,
@@ -192,7 +190,7 @@ public data class SteakyHeaderSettings(
 public data class DiagnosticsTooltipSettings(
     val labelTextStyle: TextStyle = TextStyle.Default,
     val severityIconSize: Dp? = null,
-    val scrollbarsVisibility: ScrollbarsVisibility = ScrollbarsVisibility.Both,
+    val scrollbarsVisibility: ScrollbarsChoice = ScrollbarsChoice.Both,
     val appearanceDelay: Duration = 400.milliseconds,
     val updateDelay: Duration = 600.milliseconds,
     val disappearanceDelay: Duration = 600.milliseconds,
@@ -268,7 +266,7 @@ internal expect fun TooltipBox(
 )
 
 @Serializable
-public enum class ScrollbarsVisibility {
+public enum class ScrollbarsChoice {
     None,
     Horizontal,
     Vertical,
@@ -474,6 +472,9 @@ public fun KotlinSourceEditor(
         mutableStateOf<FoundMatches?>(null)
     }
     var scrollToFound by remember { mutableStateOf(Any()) }
+    val startPadding = visualSettings.innerPadding.calculateStartPadding(LocalLayoutDirection.current)
+    val endPadding = visualSettings.innerPadding.calculateEndPadding(LocalLayoutDirection.current)
+    var showVerticalScrollbarBasedOnHight by remember { mutableStateOf(false) }
 
     LaunchedEffect(scrollToFound) {
         if (foundMatches != null) {
@@ -509,375 +510,432 @@ public fun KotlinSourceEditor(
         tooltipPointerOffset = currentPointerOffset
     }
 
-    Column(modifier = modifier.background(colorScheme.backgroundColor)) {
-        AnimatedVisibility(showFindAndReplace) {
-            FindAndReplacePopup(
-                popupState = findAndReplaceState,
-                codeTextFieldState = codeTextFieldState,
-                foundMatches = foundMatches,
-                onFoundMatches = onFoundMatches,
-                scrollToSelected = { scrollToFound = Any() },
-                onPopupStateChange = onFindAndReplaceStateChange,
-                onPatternError = {
-                    if (snackbarHostState != null) coroutineScope.launch {
-                        snackbarHostState.showSnackbar(it, withDismissAction = true)
-                    }
-                },
-                sourceCodeFocusRequester = sourceCodeFocusRequester,
-                colorScheme = colorScheme.findAndReplaceColorScheme,
-                onClose = {
-                    showFindAndReplace = false
-                    onFoundMatches(null)
-                },
-                onReplaced = { coroutineScope.launch { externalTextFieldChanges.emit(it) } },
-                onKeyEvents = { event ->
-                    listOfNotNull(
-                        takeIf(sourceEditorFeaturesConfiguration.enableFindAndReplace) {
-                            findAndReplaceSwitcher(
-                                currentPopupState = findAndReplaceState,
-                                onShowPopup = onFindAndReplaceStateChange,
-                                findKeyEventFilter = visualSettings.keyBindings.find.toKeyEventFilter(),
-                                replaceKeyEventFilter = visualSettings.keyBindings.replace.toKeyEventFilter(),
-                            )
-                        },
-                    ).any { it(event) }
-                },
-                settings = visualSettings.findAndReplaceSettings,
-                exitKeyEvent = visualSettings.keyBindings.exit.toKeyEventFilter(),
+    val topPadding = visualSettings.innerPadding.calculateTopPadding()
+    val bottomPadding = visualSettings.innerPadding.calculateBottomPadding()
+    BoxWithConstraints(modifier) {
+        Column(
+            modifier = Modifier
+                .background(colorScheme.backgroundColor)
+                .inConstraints(constraints),
+        ) {
+            var findAndReplaceHeight by remember { mutableStateOf(0) }
+            val editorConstraints = this@BoxWithConstraints.constraints.copy(
+                minHeight = (this@BoxWithConstraints.constraints.minHeight - findAndReplaceHeight).coerceAtLeast(0),
+                maxHeight = (this@BoxWithConstraints.constraints.maxHeight - findAndReplaceHeight).coerceAtLeast(0),
             )
-        }
-        val tooltipShape = visualSettings.diagnosticsTooltipSettings.shape
+            AnimatedVisibility(
+                visible = showFindAndReplace,
+                modifier = Modifier.onSizeChanged { findAndReplaceHeight = it.height },
+            ) {
+                FindAndReplacePopup(
+                    popupState = findAndReplaceState,
+                    codeTextFieldState = codeTextFieldState,
+                    foundMatches = foundMatches,
+                    onFoundMatches = onFoundMatches,
+                    scrollToSelected = { scrollToFound = Any() },
+                    onPopupStateChange = onFindAndReplaceStateChange,
+                    onPatternError = {
+                        if (snackbarHostState != null) coroutineScope.launch {
+                            snackbarHostState.showSnackbar(it, withDismissAction = true)
+                        }
+                    },
+                    sourceCodeFocusRequester = sourceCodeFocusRequester,
+                    colorScheme = colorScheme.findAndReplaceColorScheme,
+                    onClose = {
+                        showFindAndReplace = false
+                        onFoundMatches(null)
+                    },
+                    onReplaced = { coroutineScope.launch { externalTextFieldChanges.emit(it) } },
+                    onKeyEvents = { event ->
+                        listOfNotNull(
+                            takeIf(sourceEditorFeaturesConfiguration.enableFindAndReplace) {
+                                findAndReplaceSwitcher(
+                                    currentPopupState = findAndReplaceState,
+                                    onShowPopup = onFindAndReplaceStateChange,
+                                    findKeyEventFilter = visualSettings.keyBindings.find.toKeyEventFilter(),
+                                    replaceKeyEventFilter = visualSettings.keyBindings.replace.toKeyEventFilter(),
+                                )
+                            },
+                        ).any { it(event) }
+                    },
+                    settings = visualSettings.findAndReplaceSettings,
+                    extraStartPadding = if (visualSettings.applyInnerPaddingToFindAndReplace) startPadding else 0.dp,
+                    extraEndPadding = if (visualSettings.applyInnerPaddingToFindAndReplace) endPadding else 0.dp,
+                    extraTopPadding = if (visualSettings.applyInnerPaddingToFindAndReplace) topPadding else 0.dp,
+                    exitKeyEvent = visualSettings.keyBindings.exit.toKeyEventFilter(),
+                )
+            }
 
-        var cancelTooltip by remember { mutableStateOf<Job?>(null) }
-        fun onEnter() {
-            cancelTooltip?.cancel()
-            cancelTooltip = null
-        }
+            val tooltipShape = visualSettings.diagnosticsTooltipSettings.shape
 
-        fun onExit() {
-            if (cancelTooltip == null) {
-                cancelTooltip = coroutineScope.launch {
-                    delay(visualSettings.diagnosticsTooltipSettings.disappearanceDelay)
-                    cursorDiagnostics = emptyList()
-                    cancelTooltip = null
+            var cancelTooltip by remember { mutableStateOf<Job?>(null) }
+            fun onEnter() {
+                cancelTooltip?.cancel()
+                cancelTooltip = null
+            }
+
+            val textFieldTopPadding by animateDpAsState(if (showFindAndReplace) 0.dp else topPadding)
+
+            fun onExit() {
+                if (cancelTooltip == null) {
+                    cancelTooltip = coroutineScope.launch {
+                        delay(visualSettings.diagnosticsTooltipSettings.disappearanceDelay)
+                        cursorDiagnostics = emptyList()
+                        cancelTooltip = null
+                    }
                 }
             }
-        }
-        TooltipBox(
-            tooltip = {
-                AnimatedVisibility(sourceEditorFeaturesConfiguration.enableDiagnosticsTooltip) {
-                    Box(
-                        modifier = Modifier
-                            .pointerHoverIcon(PointerIcon.Text)
-                            .onPointerEvent(PointerEventType.Enter) { onEnter() }
-                            .onPointerEvent(PointerEventType.Exit) { onExit() }
-                            .padding(visualSettings.diagnosticsTooltipSettings.hitBoxPadding)
-                    ) {
-                        Tooltip(
-                            diagnostics = tooltipDiagnostics,
-                            colorScheme = colorScheme.tooltipsColorScheme,
-                            shape = tooltipShape,
-                            scrollbarsVisibility = visualSettings.scrollbarsVisibility,
-                            settings = visualSettings.diagnosticsTooltipSettings,
-                            modifier = Modifier
-                                .pointerHoverIcon(PointerIcon.Default)
-                                .shadow(
-                                    elevation = visualSettings.diagnosticsTooltipSettings.elevation,
-                                    shape = tooltipShape,
-                                    ambientColor = colorScheme.tooltipsColorScheme.shadowColor,
-                                    spotColor = colorScheme.tooltipsColorScheme.shadowColor,
-                                ),
-                        )
-                    }
-                }
-            },
-            delayMillis = 0, // because it is global TextField delay
-            offset = tooltipPointerOffset,
-            modifier = plainSourceEditorModifier.onPointerEvent(PointerEventType.Move) {
-                val newOffset =
-                    it.changes.first().position.let { (x, y) -> IntOffset(x.toInt(), y.toInt()) }
-                currentPointerOffset = newOffset
-            },
-        ) {
-            val visualTransformation = foundMatches?.toVisualTransformation(
-                foundColor = colorScheme.findAndReplaceColorScheme.foundMatchColor,
-                currentFoundColor = colorScheme.findAndReplaceColorScheme.currentFoundMatchColor,
-            ) ?: VisualTransformation.None
-            BasicSourceCodeTextField(
-                state = codeTextFieldState,
-                onStateUpdate = onCodeTextFieldStateChange,
-                preprocessors = preprocessors,
-                externalTextFieldChanges = externalTextFieldChanges,
-                tokenize = {
-                    tokenizationPipeline(
-                        textFieldState = it,
-                        colorScheme = colorScheme,
-                        sourceEditorFeaturesConfiguration = sourceEditorFeaturesConfiguration,
-                        originalTokenizer = originalTokenizer,
-                        bracketMatcher = matchBrackets
-                    )
-                },
-                basicTextFieldModifier = basicTextFieldModifier
-                    .focusRequester(sourceCodeFocusRequester)
-                    .onPointerEvent(PointerEventType.Enter) { onEnter() }
-                    .onPointerEvent(PointerEventType.Exit) { onExit() },
-                visualTransformation = visualTransformation,
-                additionalInnerComposable = { _, _ ->
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = showIndentation,
-                        enter = fadeIn(),
-                        exit = fadeOut(),
-                    ) {
-                        IndentationLines(
-                            indentationLines = indentationLines,
-                            modifier = Modifier.background(color = colorScheme.indentationColor),
-                            textStyle = visualSettings.sourceTextStyle,
-                            width = visualSettings.indentationLinesSettings.thickness,
-                        )
-                    }
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = sourceEditorFeaturesConfiguration.highlightDiagnostics,
-                        enter = fadeIn(),
-                        exit = fadeOut(),
-                    ) {
-                        CompilerDiagnostics(
-                            codeTextFieldState = codeTextFieldState,
-                            diagnostics = diagnostics,
-                            colorScheme = colorScheme.diagnosticsColorScheme,
-                            textSize = textSize,
-                            settings = visualSettings.diagnosticsHighlightingSettings,
-                        )
-                    }
-                },
-                manualScrollToPosition = externalScrollToFlow,
-                lineNumbersColor = colorScheme.lineNumbersColor,
-                additionalOuterComposable = { _, inner ->
-                    inner()
 
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = stickyHeader,
-                        enter = fadeIn(),
-                        exit = fadeOut(),
-                    ) {
-                        StickyHeader(
-                            state = codeTextFieldState,
-                            visualTransformation = visualTransformation,
-                            textStyle = visualSettings.sourceTextStyle,
-                            scrollState = verticalScrollState,
-                            showLineNumbers = showLineNumbers,
-                            matchedBrackets = matchedBrackets,
-                            stickyHeaderLinesChooser = stickyHeaderLinesChooser,
-                            lineNumbersColor = colorScheme.lineNumbersColor,
-                            maximumStickyHeaderHeight = (visualSettings.stickyHeaderSettings.maximumHeightRatio * maxHeight).also {
-                                maximumStickyHeaderLinesHeight = it
-                            },
-                            onClick = {
-                                coroutineScope.launch {
-                                    externalScrollToFlow.emit(SourceCodePosition(it, 0))
-                                }
-                            },
-                            backgroundColor = colorScheme.backgroundColor,
-                            additionalInnerComposable = { linesToWrite, _ ->
-                                val lineMapping = linesToWrite.keys.withIndex()
-                                    .associate { (index, line) -> line to index }
-                                androidx.compose.animation.AnimatedVisibility(
-                                    visible = showIndentation,
-                                    enter = fadeIn(),
-                                    exit = fadeOut(),
-                                ) {
-                                    IndentationLines(
-                                        indentationLines = indentationLines,
-                                        modifier = Modifier.background(color = colorScheme.indentationColor),
-                                        textStyle = visualSettings.sourceTextStyle,
-                                        mapLineNumbers = lineMapping::get,
-                                        width = visualSettings.indentationLinesSettings.thickness,
+            val textFieldPadding = PaddingValues(
+                start = startPadding,
+                end = endPadding,
+                top = textFieldTopPadding,
+                bottom = bottomPadding,
+            )
+            TooltipBox(
+                tooltip = {
+                    AnimatedVisibility(sourceEditorFeaturesConfiguration.enableDiagnosticsTooltip) {
+                        Box(
+                            modifier = Modifier
+                                .pointerHoverIcon(PointerIcon.Text)
+                                .onPointerEvent(PointerEventType.Enter) { onEnter() }
+                                .onPointerEvent(PointerEventType.Exit) { onExit() }
+                                .padding(visualSettings.diagnosticsTooltipSettings.hitBoxPadding)
+                        ) {
+                            Tooltip(
+                                diagnostics = tooltipDiagnostics,
+                                colorScheme = colorScheme.tooltipsColorScheme,
+                                shape = tooltipShape,
+                                scrollbarsVisibility = visualSettings.scrollbarsVisibility,
+                                settings = visualSettings.diagnosticsTooltipSettings,
+                                modifier = Modifier
+                                    .pointerHoverIcon(PointerIcon.Default)
+                                    .shadow(
+                                        elevation = visualSettings.diagnosticsTooltipSettings.elevation,
+                                        shape = tooltipShape,
+                                        ambientColor = colorScheme.tooltipsColorScheme.shadowColor,
+                                        spotColor = colorScheme.tooltipsColorScheme.shadowColor,
+                                    ),
+                            )
+                        }
+                    }
+                },
+                delayMillis = 0, // because it is global TextField delay
+                offset = tooltipPointerOffset,
+                modifier = plainSourceEditorModifier.onPointerEvent(PointerEventType.Move) {
+                    val newOffset =
+                        it.changes.first().position.let { (x, y) -> IntOffset(x.toInt(), y.toInt()) }
+                    currentPointerOffset = newOffset
+                }
+                    .inConstraints(editorConstraints),
+            ) {
+                val visualTransformation = foundMatches?.toVisualTransformation(
+                    foundColor = colorScheme.findAndReplaceColorScheme.foundMatchColor,
+                    currentFoundColor = colorScheme.findAndReplaceColorScheme.currentFoundMatchColor,
+                ) ?: VisualTransformation.None
+                BasicSourceCodeTextField(
+                    state = codeTextFieldState,
+                    onStateUpdate = onCodeTextFieldStateChange,
+                    preprocessors = preprocessors,
+                    externalTextFieldChanges = externalTextFieldChanges,
+                    tokenize = {
+                        tokenizationPipeline(
+                            textFieldState = it,
+                            colorScheme = colorScheme,
+                            sourceEditorFeaturesConfiguration = sourceEditorFeaturesConfiguration,
+                            originalTokenizer = originalTokenizer,
+                            bracketMatcher = matchBrackets
+                        )
+                    },
+                    basicTextFieldModifier = basicTextFieldModifier
+                        .focusRequester(sourceCodeFocusRequester)
+                        .onPointerEvent(PointerEventType.Enter) { onEnter() }
+                        .onPointerEvent(PointerEventType.Exit) { onExit() }
+                        .onSizeChanged {
+                            // For some reason, checking maxValue > 0 is not enough during appearance of FindAndReplace
+                            val pureHight = textSize.height * codeTextFieldState.lineOffsets.size
+                            showVerticalScrollbarBasedOnHight = it.height <= pureHight
+                        },
+                    visualTransformation = visualTransformation,
+                    additionalInnerComposable = { _, _ ->
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = showIndentation,
+                            enter = fadeIn(),
+                            exit = fadeOut(),
+                        ) {
+                            IndentationLines(
+                                indentationLines = indentationLines,
+                                modifier = Modifier.background(color = colorScheme.indentationColor),
+                                textStyle = visualSettings.sourceTextStyle,
+                                width = visualSettings.indentationLinesSettings.thickness,
+                            )
+                        }
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = sourceEditorFeaturesConfiguration.highlightDiagnostics,
+                            enter = fadeIn(),
+                            exit = fadeOut(),
+                        ) {
+                            CompilerDiagnostics(
+                                codeTextFieldState = codeTextFieldState,
+                                diagnostics = diagnostics,
+                                colorScheme = colorScheme.diagnosticsColorScheme,
+                                textSize = textSize,
+                                settings = visualSettings.diagnosticsHighlightingSettings,
+                            )
+                        }
+                    },
+                    manualScrollToPosition = externalScrollToFlow,
+                    lineNumbersColor = colorScheme.lineNumbersColor,
+                    innerPadding = textFieldPadding,
+                    additionalOuterComposable = { _, inner ->
+                        inner()
+
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = stickyHeader,
+                            enter = fadeIn(),
+                            exit = fadeOut(),
+                        ) {
+                            StickyHeader(
+                                state = codeTextFieldState,
+                                visualTransformation = visualTransformation,
+                                textStyle = visualSettings.sourceTextStyle,
+                                scrollState = verticalScrollState,
+                                showLineNumbers = showLineNumbers,
+                                matchedBrackets = matchedBrackets,
+                                stickyHeaderLinesChooser = stickyHeaderLinesChooser,
+                                lineNumbersColor = colorScheme.lineNumbersColor,
+                                maximumStickyHeaderHeight = (visualSettings.stickyHeaderSettings.maximumHeightRatio * maxHeight).also {
+                                    maximumStickyHeaderLinesHeight = it
+                                },
+                                onClick = {
+                                    coroutineScope.launch {
+                                        externalScrollToFlow.emit(SourceCodePosition(it, 0))
+                                    }
+                                },
+                                innerPadding = PaddingValues(
+                                    start = textFieldPadding.calculateStartPadding(LocalLayoutDirection.current),
+                                    end = textFieldPadding.calculateEndPadding(LocalLayoutDirection.current),
+                                    top = textFieldPadding.calculateTopPadding(),
+                                ),
+                                backgroundColor = colorScheme.backgroundColor,
+                                additionalInnerComposable = { linesToWrite, _ ->
+                                    val lineMapping = linesToWrite.keys.withIndex()
+                                        .associate { (index, line) -> line to index }
+                                    androidx.compose.animation.AnimatedVisibility(
+                                        visible = showIndentation,
+                                        enter = fadeIn(),
+                                        exit = fadeOut(),
+                                    ) {
+                                        IndentationLines(
+                                            indentationLines = indentationLines,
+                                            modifier = Modifier.background(color = colorScheme.indentationColor),
+                                            textStyle = visualSettings.sourceTextStyle,
+                                            mapLineNumbers = lineMapping::get,
+                                            width = visualSettings.indentationLinesSettings.thickness,
+                                        )
+                                    }
+                                    androidx.compose.animation.AnimatedVisibility(
+                                        visible = sourceEditorFeaturesConfiguration.highlightDiagnostics,
+                                        enter = fadeIn(),
+                                        exit = fadeOut(),
+                                    ) {
+                                        CompilerDiagnostics(
+                                            codeTextFieldState = codeTextFieldState,
+                                            diagnostics = diagnostics,
+                                            colorScheme = colorScheme.diagnosticsColorScheme,
+                                            textSize = textSize,
+                                            mapLineNumbers = lineMapping::get,
+                                            settings = visualSettings.diagnosticsHighlightingSettings,
+                                        )
+                                    }
+                                },
+                                onHoveredSourceCodePositionChange = { sourceCodePosition: SourceCodePosition ->
+                                    cursorDiagnostics = evaluateCurrentDiagnostics(sourceCodePosition)
+                                },
+                                divider = {
+                                    HorizontalDivider(
+                                        color = colorScheme.stickyHeaderSeparatorColor,
+                                        thickness = visualSettings.stickyHeaderSettings.separatorThickness,
                                     )
-                                }
-                                androidx.compose.animation.AnimatedVisibility(
-                                    visible = sourceEditorFeaturesConfiguration.highlightDiagnostics,
-                                    enter = fadeIn(),
-                                    exit = fadeOut(),
-                                ) {
-                                    CompilerDiagnostics(
-                                        codeTextFieldState = codeTextFieldState,
-                                        diagnostics = diagnostics,
-                                        colorScheme = colorScheme.diagnosticsColorScheme,
-                                        textSize = textSize,
-                                        mapLineNumbers = lineMapping::get,
-                                        settings = visualSettings.diagnosticsHighlightingSettings,
-                                    )
-                                }
-                            },
-                            onHoveredSourceCodePositionChange = { sourceCodePosition: SourceCodePosition ->
-                                cursorDiagnostics = evaluateCurrentDiagnostics(sourceCodePosition)
-                            },
-                            divider = {
-                                HorizontalDivider(
-                                    color = colorScheme.stickyHeaderSeparatorColor,
-                                    thickness = visualSettings.stickyHeaderSettings.separatorThickness,
-                                )
+                                },
+                            )
+                        }
+                        val scrollbarThickness = visualSettings.scrollbarsThickness
+                        val verticalScrollbarThicknessAnimated by animateIntAsState(
+                            if (visualSettings.scrollbarsVisibility.showVertical && verticalScrollState.maxValue > 0 && showVerticalScrollbarBasedOnHight) {
+                                density.run { scrollbarThickness.toPx().roundToInt() }
+                            } else {
+                                0
                             },
                         )
-                    }
-                    val scrollbarThickness = visualSettings.scrollbarsThickness
-                    val verticalScrollbarThicknessAnimated by animateIntAsState(
-                        if (visualSettings.scrollbarsVisibility.showVertical && verticalScrollState.maxValue > 0) {
-                            density.run { scrollbarThickness.toPx().roundToInt() }
-                        } else {
-                            0
-                        }
-                    )
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = sourceEditorFeaturesConfiguration.enableDiagnosticsPopup,
-                        modifier = Modifier.offset {
-                            IntOffset(-verticalScrollbarThicknessAnimated, 0)
-                        }.align(Alignment.TopEnd),
-                        enter = fadeIn(),
-                        exit = fadeOut(),
-                    ) {
-                        DiagnosticsPopup(
-                            diagnostics = diagnostics,
-                            colorScheme = colorScheme.diagnosticsPopupColorScheme,
-                            settings = visualSettings.diagnosticsPopupSettings,
-                            onCopied = {
-                                if (snackbarHostState != null) {
-                                    coroutineScope.launch {
-                                        val message = visualSettings
-                                            .diagnosticsPopupSettings
-                                            .diagnosticsListSettings
-                                            .copiedDiagnosticContentNotificationMessage
-                                        snackbarHostState.showSnackbar(message, withDismissAction = true)
-                                    }
-                                }
-                            },
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = sourceEditorFeaturesConfiguration.enableDiagnosticsPopup,
+                            modifier = Modifier
+                                .offset { IntOffset(-verticalScrollbarThicknessAnimated, 0) }
+                                .align(Alignment.TopEnd)
+                                .padding(if (visualSettings.applyInnerPaddingToDiagnosticsPopup) textFieldPadding else PaddingValues()),
+                            enter = fadeIn(),
+                            exit = fadeOut(),
                         ) {
-                            val offset = codeTextFieldState.offsets
-                                .getOrNull(it.line)
-                                ?.getOrNull(it.column)
-                            if (offset != null) {
-                                val newCodeTextFieldState = codeTextFieldState.copy(
-                                    selection = TextRange(offset)
-                                )
-                                onCodeTextFieldStateChange(newCodeTextFieldState)
-                                coroutineScope.launch {
-                                    externalScrollToFlow.emit(SourceCodePosition(it.line, it.column))
-                                    // workaround for COMPOSE-727
-                                    delay(300)
-                                    val horizontalScrollPosition = horizontalScrollState.value
-                                    val verticalScrollPosition = verticalScrollState.value
-                                    sourceCodeFocusRequester.requestFocus()
-                                    repeat(50) {
-                                        horizontalScrollState.scrollTo(horizontalScrollPosition)
-                                        verticalScrollState.scrollTo(verticalScrollPosition)
-                                        delay(1)
+                            DiagnosticsPopup(
+                                diagnostics = diagnostics,
+                                colorScheme = colorScheme.diagnosticsPopupColorScheme,
+                                settings = visualSettings.diagnosticsPopupSettings,
+                                onCopied = {
+                                    if (snackbarHostState != null) {
+                                        coroutineScope.launch {
+                                            val message = visualSettings
+                                                .diagnosticsPopupSettings
+                                                .diagnosticsListSettings
+                                                .copiedDiagnosticContentNotificationMessage
+                                            snackbarHostState.showSnackbar(message, withDismissAction = true)
+                                        }
+                                    }
+                                },
+                            ) {
+                                val offset = codeTextFieldState.offsets
+                                    .getOrNull(it.line)
+                                    ?.getOrNull(it.column)
+                                if (offset != null) {
+                                    val newCodeTextFieldState = codeTextFieldState.copy(
+                                        selection = TextRange(offset)
+                                    )
+                                    onCodeTextFieldStateChange(newCodeTextFieldState)
+                                    coroutineScope.launch {
+                                        externalScrollToFlow.emit(SourceCodePosition(it.line, it.column))
+                                        // workaround for COMPOSE-727
+                                        delay(300)
+                                        val horizontalScrollPosition = horizontalScrollState.value
+                                        val verticalScrollPosition = verticalScrollState.value
+                                        sourceCodeFocusRequester.requestFocus()
+                                        repeat(50) {
+                                            horizontalScrollState.scrollTo(horizontalScrollPosition)
+                                            verticalScrollState.scrollTo(verticalScrollPosition)
+                                            delay(1)
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                    val lineNumbersWidth =
-                        if (showLineNumbers) density.run { (codeTextFieldState.offsets.size.toString().length * textSize.width).toDp() }
-                        else 0.dp
-                    val lineNumbersWidthAnimated by animateDpAsState(lineNumbersWidth)
-                    val horizontalScrollBarEndOffset by animateDpAsState(
-                        if (visualSettings.scrollbarsVisibility == ScrollbarsVisibility.Both && verticalScrollState.maxValue > 0)
-                            scrollbarThickness
-                        else
-                            0.dp
-                    )
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = horizontalScrollState.showScrollbar && visualSettings.scrollbarsVisibility.showHorizontal,
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(
-                            start = lineNumbersWidthAnimated,
-                            end = horizontalScrollBarEndOffset,
-                        ),
-                        enter = fadeIn(),
-                        exit = fadeOut(),
-                    ) {
-                        HorizontalScrollbar(
-                            horizontalScrollState,
-                            hoverColor = colorScheme.scrollbarsColorScheme.hoveredColor,
-                            unhoverColor = colorScheme.scrollbarsColorScheme.notHoveredColor,
+                        val lineNumbersWidth =
+                            if (showLineNumbers) density.run { (codeTextFieldState.offsets.size.toString().length * textSize.width).toDp() }
+                            else 0.dp
+                        val lineNumbersWidthAnimated by animateDpAsState(lineNumbersWidth)
+                        val horizontalScrollBarEndOffset by animateDpAsState(
+                            if (visualSettings.scrollbarsVisibility == ScrollbarsChoice.Both && verticalScrollState.maxValue > 0 && showVerticalScrollbarBasedOnHight)
+                                scrollbarThickness
+                            else
+                                0.dp
                         )
-                    }
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = visualSettings.scrollbarsVisibility.showVertical,
-                        enter = fadeIn(),
-                        exit = fadeOut(),
-                        modifier = Modifier.align(Alignment.CenterEnd),
-                    ) {
-                        VerticalScrollbar(
-                            verticalScrollState,
-                            hoverColor = colorScheme.scrollbarsColorScheme.hoveredColor,
-                            unhoverColor = colorScheme.scrollbarsColorScheme.notHoveredColor,
-                        )
-                    }
-                },
-                showLineNumbers = showLineNumbers,
-                textStyle = visualSettings.sourceTextStyle,
-                verticalScrollState = verticalScrollState,
-                horizontalScrollState = horizontalScrollState,
-                modifier = Modifier.background(color = colorScheme.backgroundColor),
-                editorOffsetsForPosition = {
-                    EditorOffsets(
-                        top = getOffsetForLineToAppearOnTop(
-                            line = it.line,
-                            textSize = textSize,
-                            density = density,
-                            state = codeTextFieldState,
-                            matchedBrackets = matchedBrackets,
-                            dividerThickness = 0.dp, // do not include divider thickness in the calculation
-                            maximumStickyHeaderHeight = maximumStickyHeaderLinesHeight,
-                            stickyHeaderLinesChooser = stickyHeaderLinesChooser,
-                        )
-                    )
-                },
-                keyEventHandler = combineKeyEventHandlers(
-                    takeIf(sourceEditorFeaturesConfiguration.indentCode) {
-                        handleMovingOffsets(
-                            state = codeTextFieldState,
-                            moveForwardFilter = visualSettings.keyBindings.moveOffsetForward.toKeyEventFilter(),
-                            moveBackwardFilter = visualSettings.keyBindings.moveOffsetBackward.toKeyEventFilter(),
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = horizontalScrollState.showScrollbar && visualSettings.scrollbarsVisibility.showHorizontal,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(start = lineNumbersWidthAnimated, end = horizontalScrollBarEndOffset)
+                                .padding(if (visualSettings.applyInnerPaddingToScrollbars.showHorizontal) textFieldPadding else PaddingValues()),
+                            enter = fadeIn(),
+                            exit = fadeOut(),
+                        ) {
+                            HorizontalScrollbar(
+                                scrollState = horizontalScrollState,
+                                hoverColor = colorScheme.scrollbarsColorScheme.hoveredColor,
+                                unhoverColor = colorScheme.scrollbarsColorScheme.notHoveredColor,
+                            )
+                        }
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = visualSettings.scrollbarsVisibility.showVertical && showVerticalScrollbarBasedOnHight,
+                            enter = fadeIn(),
+                            exit = fadeOut(),
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .padding(if (visualSettings.applyInnerPaddingToScrollbars.showVertical) textFieldPadding else PaddingValues()),
+                        ) {
+                            VerticalScrollbar(
+                                scrollState = verticalScrollState,
+                                hoverColor = colorScheme.scrollbarsColorScheme.hoveredColor,
+                                unhoverColor = colorScheme.scrollbarsColorScheme.notHoveredColor,
+                            )
+                        }
+                    },
+                    showLineNumbers = showLineNumbers,
+                    textStyle = visualSettings.sourceTextStyle,
+                    verticalScrollState = verticalScrollState,
+                    horizontalScrollState = horizontalScrollState,
+                    modifier = Modifier
+                        .inConstraints(editorConstraints)
+                        .background(color = colorScheme.backgroundColor),
+                    editorOffsetsForPosition = {
+                        EditorOffsets(
+                            top = getOffsetForLineToAppearOnTop(
+                                line = it.line,
+                                textSize = textSize,
+                                density = density,
+                                state = codeTextFieldState,
+                                matchedBrackets = matchedBrackets,
+                                dividerThickness = 0.dp, // do not include divider thickness in the calculation
+                                maximumStickyHeaderHeight = maximumStickyHeaderLinesHeight,
+                                stickyHeaderLinesChooser = stickyHeaderLinesChooser,
+                            )
                         )
                     },
-                    takeIf(sourceEditorFeaturesConfiguration.duplicateStringsAndLines) {
-                        handleDuplicateLinesAndStrings(
-                            state = codeTextFieldState,
-                            keyEventFilter = visualSettings.keyBindings.duplicateStringsAndLines.toKeyEventFilter(),
-                        )
+                    keyEventHandler = combineKeyEventHandlers(
+                        takeIf(sourceEditorFeaturesConfiguration.indentCode) {
+                            handleMovingOffsets(
+                                state = codeTextFieldState,
+                                moveForwardFilter = visualSettings.keyBindings.moveOffsetForward.toKeyEventFilter(),
+                                moveBackwardFilter = visualSettings.keyBindings.moveOffsetBackward.toKeyEventFilter(),
+                            )
+                        },
+                        takeIf(sourceEditorFeaturesConfiguration.duplicateStringsAndLines) {
+                            handleDuplicateLinesAndStrings(
+                                state = codeTextFieldState,
+                                keyEventFilter = visualSettings.keyBindings.duplicateStringsAndLines.toKeyEventFilter(),
+                            )
+                        },
+                        takeIf(sourceEditorFeaturesConfiguration.enableFindAndReplace) {
+                            findAndReplace(
+                                state = codeTextFieldState,
+                                currentPopupState = findAndReplaceState,
+                                onShowPopup = {
+                                    showFindAndReplace =
+                                        if (showFindAndReplace && it == findAndReplaceState) {
+                                            false
+                                        } else {
+                                            onFindAndReplaceStateChange(it)
+                                            true
+                                        }
+                                },
+                                findKeyEventFilter = visualSettings.keyBindings.find.toKeyEventFilter(),
+                                replaceKeyEventFilter = visualSettings.keyBindings.replace.toKeyEventFilter(),
+                            )
+                        },
+                    ),
+                    charEventHandler = makeCharEventHandler(
+                        sourceEditorFeaturesConfiguration,
+                        codeTextFieldState,
+                        matchedBrackets,
+                        visualSettings.keyBindings,
+                    ),
+                    cursorBrush = SolidColor(colorScheme.cursorColor),
+                    horizontalThresholdEdgeChars = visualSettings.horizontalThresholdEdgeChars,
+                    verticalThresholdEdgeLines = visualSettings.verticalThresholdEdgeLines,
+                    onHoveredSourceCodePositionChange = { sourceCodePosition: SourceCodePosition ->
+                        cursorDiagnostics = evaluateCurrentDiagnostics(sourceCodePosition)
                     },
-                    takeIf(sourceEditorFeaturesConfiguration.enableFindAndReplace) {
-                        findAndReplace(
-                            state = codeTextFieldState,
-                            currentPopupState = findAndReplaceState,
-                            onShowPopup = {
-                                showFindAndReplace =
-                                    if (showFindAndReplace && it == findAndReplaceState) {
-                                        false
-                                    } else {
-                                        onFindAndReplaceStateChange(it)
-                                        true
-                                    }
-                            },
-                            findKeyEventFilter = visualSettings.keyBindings.find.toKeyEventFilter(),
-                            replaceKeyEventFilter = visualSettings.keyBindings.replace.toKeyEventFilter(),
-                        )
-                    },
-                ),
-                charEventHandler = makeCharEventHandler(
-                    sourceEditorFeaturesConfiguration,
-                    codeTextFieldState,
-                    matchedBrackets,
-                    visualSettings.keyBindings,
-                ),
-                cursorBrush = SolidColor(colorScheme.cursorColor),
-                horizontalThresholdEdgeChars = visualSettings.horizontalThresholdEdgeChars,
-                verticalThresholdEdgeLines = visualSettings.verticalThresholdEdgeLines,
-                onHoveredSourceCodePositionChange = { sourceCodePosition: SourceCodePosition ->
-                    cursorDiagnostics = evaluateCurrentDiagnostics(sourceCodePosition)
-                },
-            )
+                )
+            }
         }
+    }
+}
+
+private fun Modifier.inConstraints(constraints: Constraints) = composed {
+    with(LocalDensity.current) {
+        sizeIn(
+            minWidth = constraints.minWidth.toDp(),
+            maxWidth = constraints.maxWidth.toDp(),
+            minHeight = constraints.minHeight.toDp(),
+            maxHeight = constraints.maxHeight.toDp(),
+        )
     }
 }
 
@@ -1093,7 +1151,7 @@ private fun Tooltip(
     diagnostics: List<DiagnosticDescriptor>,
     colorScheme: TooltipsColorScheme,
     shape: Shape,
-    scrollbarsVisibility: ScrollbarsVisibility,
+    scrollbarsVisibility: ScrollbarsChoice,
     settings: DiagnosticsTooltipSettings,
     modifier: Modifier = Modifier,
 ) {

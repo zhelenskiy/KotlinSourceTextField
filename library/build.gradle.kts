@@ -104,6 +104,10 @@ compose.experimental {
 }
 
 publishing {
+    publications.withType<MavenPublication> {
+        require(artifactId.startsWith(project.name)) { artifactId }
+        artifactId = "editor-kotlin" + artifactId.removePrefix(project.name)
+    }
     repositories {
         maven {
             url = uri("https://maven.pkg.github.com/zhelenskiy/KotlinSourceTextField")

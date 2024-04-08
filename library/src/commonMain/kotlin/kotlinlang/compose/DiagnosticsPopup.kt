@@ -65,7 +65,7 @@ public data class DiagnosticsPopupHeaderSettings(
 
 public data class DiagnosticsPopupDiagnosticsListSettings(
     val shape: Shape = RoundedCornerShape(8.dp),
-    val scrollbarsVisibility: ScrollbarsVisibility = ScrollbarsVisibility.Both,
+    val scrollbarsVisibility: ScrollbarsChoice = ScrollbarsChoice.Both,
     val spanBetweenHeaderAndList: Dp = 4.dp,
     val maxHightRatio: Float = 0.7f,
     val maxWidthRatio: Float = 0.6f,
