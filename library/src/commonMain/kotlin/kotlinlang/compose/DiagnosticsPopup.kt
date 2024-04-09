@@ -155,8 +155,11 @@ private fun DiagnosticsHeader(
                 .clickable { onCollapsedChanged(!collapsed) }
                 .padding(settings.padding),
         ) {
-            for (severity in DiagnosticSeverity.entries) {
-                val currentDiagnostics = diagnostics.filter { it.severity == severity }
+            val severity2diagnostics = diagnostics.groupBy { it.severity }
+            for ((index, severity) in DiagnosticSeverity.entries.withIndex()) {
+                val currentDiagnostics = severity2diagnostics[severity] ?: emptyList()
+                val isLast = DiagnosticSeverity.entries.slice((index + 1)..DiagnosticSeverity.entries.lastIndex)
+                    .all { severity2diagnostics[it].isNullOrEmpty() }
                 AnimatedVisibility(currentDiagnostics.isNotEmpty() || diagnostics.isEmpty()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         severity.icon(
@@ -173,9 +176,11 @@ private fun DiagnosticsHeader(
                             style = settings.labelTextStyle,
                             color = colorScheme.countLabelColor,
                         )
+                        AnimatedVisibility(!isLast) {
+                            Spacer(Modifier.width(settings.spaceBetweenDiagnosticSeverities))
+                        }
                     }
                 }
-                Spacer(Modifier.width(settings.spaceBetweenDiagnosticSeverities))
             }
         }
     }
