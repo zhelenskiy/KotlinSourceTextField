@@ -2,6 +2,8 @@ package kotlinlang.compose
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring.StiffnessLow
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -20,15 +22,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -135,12 +130,16 @@ private fun DiagnosticsHeader(
     settings: DiagnosticsPopupHeaderSettings,
 ) {
     val shape = settings.shape
-    val lastNotEmptyDiagnosticsCount = remember { mutableStateMapOf<DiagnosticSeverity, Int>() }
+    val lastDiagnosticsCountPerCategorySkipingZero = remember { mutableStateMapOf<DiagnosticSeverity, Int>() }
+    val lastDiagnosticsCategoryPresentedWhenTheyExist = remember { mutableStateMapOf<DiagnosticSeverity, Boolean>() }
     LaunchedEffect(diagnostics) {
         for (severity in DiagnosticSeverity.entries) {
             val count = diagnostics.count { it.severity == severity }
             if (count > 0) {
-                lastNotEmptyDiagnosticsCount[severity] = count
+                lastDiagnosticsCountPerCategorySkipingZero[severity] = count
+            }
+            if (diagnostics.isNotEmpty()) {
+                lastDiagnosticsCategoryPresentedWhenTheyExist[severity] = count > 0
             }
         }
     }
@@ -160,7 +159,8 @@ private fun DiagnosticsHeader(
                 val currentDiagnostics = severity2diagnostics[severity] ?: emptyList()
                 val isLast = DiagnosticSeverity.entries.slice((index + 1)..DiagnosticSeverity.entries.lastIndex)
                     .all { severity2diagnostics[it].isNullOrEmpty() }
-                AnimatedVisibility(currentDiagnostics.isNotEmpty() || diagnostics.isEmpty()) {
+                val wasPresentedBeforeClosing = lastDiagnosticsCategoryPresentedWhenTheyExist[severity] == true
+                AnimatedVisibility(currentDiagnostics.isNotEmpty() || diagnostics.isEmpty() && wasPresentedBeforeClosing) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         severity.icon(
                             contentDescription = severity.name,
@@ -170,7 +170,7 @@ private fun DiagnosticsHeader(
                         Spacer(Modifier.width(settings.spaceBetweenDiagnosticSeverityIconAndCount))
                         val countToShow =
                             if (currentDiagnostics.isNotEmpty()) currentDiagnostics.size
-                            else lastNotEmptyDiagnosticsCount[severity] ?: 0
+                            else lastDiagnosticsCountPerCategorySkipingZero[severity] ?: 0
                         Text(
                             text = countToShow.toString(),
                             style = settings.labelTextStyle,
