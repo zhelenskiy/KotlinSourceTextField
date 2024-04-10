@@ -182,6 +182,7 @@ internal fun FindAndReplacePopup(
     extraStartPadding: Dp,
     extraEndPadding: Dp,
     extraTopPadding: Dp,
+    keyboardType: KeyboardType,
 ) {
     var lastErrorMessage by remember { mutableStateOf("") }
     var isFindRegexError by remember { mutableStateOf(false) }
@@ -319,7 +320,7 @@ internal fun FindAndReplacePopup(
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.None,
                                 autoCorrect = false,
-                                keyboardType = KeyboardType.Ascii,
+                                keyboardType = keyboardType,
                                 imeAction = if (popupState.showReplace) ImeAction.Next else ImeAction.Search
                             ),
                             cursorBrush = SolidColor(colorScheme.cursorColor),
@@ -450,7 +451,7 @@ internal fun FindAndReplacePopup(
                                 keyboardOptions = KeyboardOptions(
                                     capitalization = KeyboardCapitalization.None,
                                     autoCorrect = false,
-                                    keyboardType = KeyboardType.Ascii,
+                                    keyboardType = keyboardType,
                                     imeAction = ImeAction.Go,
                                 ),
                                 cursorBrush = SolidColor(colorScheme.cursorColor),

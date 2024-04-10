@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
@@ -77,6 +78,7 @@ public data class KotlinSourceEditorFeaturesConfiguration(
 
 public data class KotlinSourceEditorSettings(
     val sourceTextStyle: TextStyle,
+    val keyboardType: KeyboardType = KeyboardType.Text,
     val horizontalThresholdEdgeChars: Int = 5,
     val verticalThresholdEdgeLines: Int = 1,
     val scrollbarsVisibility: ScrollbarsChoice = ScrollbarsChoice.Both,
@@ -102,6 +104,7 @@ public data class KotlinSourceEditorSettings(
 
 @Composable
 public fun KotlinSourceEditorSettings(
+    keyboardType: KeyboardType = KeyboardType.Text,
     horizontalThresholdEdgeChars: Int = 5,
     verticalThresholdEdgeLines: Int = 1,
     scrollbarsVisibility: ScrollbarsChoice = ScrollbarsChoice.Both,
@@ -127,6 +130,7 @@ public fun KotlinSourceEditorSettings(
     keyBindings: KeyBindings = KeyBindings(),
 ): KotlinSourceEditorSettings = KotlinSourceEditorSettings(
     sourceTextStyle = kotlinSourceEditorDefaultTextStyle,
+    keyboardType = keyboardType,
     horizontalThresholdEdgeChars = horizontalThresholdEdgeChars,
     verticalThresholdEdgeLines = verticalThresholdEdgeLines,
     scrollbarsVisibility = scrollbarsVisibility,
@@ -563,6 +567,7 @@ public fun KotlinSourceEditor(
                     extraEndPadding = if (visualSettings.applyInnerPaddingToFindAndReplace) endPadding else 0.dp,
                     extraTopPadding = if (visualSettings.applyInnerPaddingToFindAndReplace) topPadding else 0.dp,
                     exitKeyEvent = visualSettings.keyBindings.exit.toKeyEventFilter(),
+                    keyboardType = visualSettings.keyboardType,
                 )
             }
 
@@ -644,7 +649,7 @@ public fun KotlinSourceEditor(
                             colorScheme = colorScheme,
                             sourceEditorFeaturesConfiguration = sourceEditorFeaturesConfiguration,
                             originalTokenizer = originalTokenizer,
-                            bracketMatcher = matchBrackets
+                            bracketMatcher = matchBrackets,
                         )
                     },
                     basicTextFieldModifier = basicTextFieldModifier
@@ -864,6 +869,7 @@ public fun KotlinSourceEditor(
                     modifier = Modifier
                         .inConstraints(editorConstraints)
                         .background(color = colorScheme.backgroundColor),
+                    keyboardType = visualSettings.keyboardType,
                     editorOffsetsForPosition = {
                         EditorOffsets(
                             top = getOffsetForLineToAppearOnTop(
