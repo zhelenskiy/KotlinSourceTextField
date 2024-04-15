@@ -3,15 +3,13 @@ package kotlinlang.compose
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.TextFieldValue
-import editor.basic.BasicSourceCodeTextFieldState
-import editor.basic.CharEvent
-import editor.basic.CharEventHandler
+import editor.basic.*
 
 internal fun commentBlock(
     state: BasicSourceCodeTextFieldState<KotlinComposeToken>,
-    char: Char = '/',
-): CharEventHandler = f@{ charEvent ->
-    if (charEvent !is CharEvent.Insert || charEvent.char != char || state.selection.collapsed) return@f null
+    keyboardEventFilter: KeyboardEventFilter,
+): KeyboardEventHandler = f@{ keyboardEvent ->
+    if (!keyboardEventFilter(keyboardEvent) || state.selection.collapsed) return@f null
 
     val min = state.selection.min
     val max = state.selection.max
@@ -78,4 +76,73 @@ internal fun commentBlock(
             },
         )
     }
+}
+
+internal fun commentLines(
+    state: BasicSourceCodeTextFieldState<KotlinComposeToken>,
+    keyboardEventFilter: KeyboardEventFilter,
+): KeyboardEventHandler = f@{ keyboardEvent ->
+    if (!keyboardEventFilter(keyboardEvent)) return@f null
+    val min = state.selection.min
+    val max = state.selection.max
+    val minLine = state.sourceCodePositions[min].line
+    val maxLine = state.sourceCodePositions[max].line
+    val isCommented = (minLine..maxLine).all {
+        val contentStart = state.lineOffsets[it] ?: return@all false
+        if (contentStart !in state.offsets[it].indices || contentStart + 1 !in state.offsets[it].indices) return@all false
+        val commentOffset = state.offsets[it][contentStart]
+        state.text[commentOffset] == '/' && state.text[commentOffset + 1] == '/'
+    }
+    var selectionStart = state.selection.start
+    var selectionEnd = state.selection.end
+    val composition = state.composition
+    var compositionStart = composition?.start ?: 0
+    var compositionEnd = composition?.end ?: 0
+    val newText = if (isCommented) {
+        buildAnnotatedString {
+            append(state.annotatedString, 0, state.offsets[minLine].first())
+            for (line in minLine..maxLine) {
+                val minOffset = state.offsets[line].first()
+                val contentOffset = minOffset + state.lineOffsets[line]!!
+                val maxOffset = state.offsets[line].last()
+                append(state.annotatedString, minOffset, contentOffset)
+                append(state.annotatedString, contentOffset + 2, maxOffset)
+                if (line != maxLine) append(state.text, maxOffset, maxOffset + 1)
+                if (state.selection.start >= contentOffset + 2) selectionStart -= 2
+                else if (state.selection.start == contentOffset + 1) selectionStart--
+                if (state.selection.end >= contentOffset + 2) selectionEnd -= 2
+                else if (state.selection.end == contentOffset + 1) selectionEnd--
+                if (composition != null) {
+                    if (composition.start >= contentOffset + 2) compositionStart -= 2
+                    else if (composition.start == contentOffset + 1) compositionStart--
+                    if (composition.end >= contentOffset + 2) compositionEnd -= 2
+                    else if (composition.end == contentOffset + 1) compositionEnd--
+                }
+            }
+            append(state.annotatedString, state.offsets[maxLine].last(), state.text.length)
+        }
+    } else {
+        buildAnnotatedString {
+            append(state.annotatedString, 0, state.offsets[minLine].first())
+            for (line in minLine..maxLine) {
+                append("//")
+                val minOffset = state.offsets[line].first()
+                val maxOffset = state.offsets[line].last()
+                append(state.annotatedString, minOffset, maxOffset)
+                if (line != maxLine) append(state.text, maxOffset, maxOffset + 1)
+                if (state.selection.start >= minOffset) selectionStart += 2
+                if (state.selection.end >= minOffset) selectionEnd += 2
+                if (composition != null) {
+                    if (composition.start >= minOffset) compositionStart += 2
+                    if (composition.end >= minOffset) compositionEnd += 2
+                }
+            }
+            append(state.annotatedString, state.offsets[maxLine].last(), state.text.length)
+        }
+    }
+    TextFieldValue(
+        annotatedString = newText,
+        selection = TextRange(selectionStart, selectionEnd),
+        composition = if (composition != null) TextRange(compositionStart, compositionEnd) else null,
+    )
 }

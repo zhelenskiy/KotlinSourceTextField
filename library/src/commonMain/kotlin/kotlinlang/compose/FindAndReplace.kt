@@ -30,11 +30,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -50,11 +49,10 @@ import androidx.compose.ui.unit.dp
 import com.zhelenskiy.library.generated.resources.Res
 import com.zhelenskiy.library.generated.resources.match_case
 import com.zhelenskiy.library.generated.resources.regular_expression
-import editor.basic.BasicSourceCodeTextFieldState
-import editor.basic.KeyEventFilter
-import editor.basic.KeyEventHandler
+import editor.basic.*
 import kotlinlang.utils.size
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableSharedFlow
 import org.jetbrains.compose.resources.ExperimentalResourceApi
 import org.jetbrains.compose.resources.painterResource
 
@@ -174,15 +172,17 @@ internal fun FindAndReplacePopup(
     scrollToSelected: () -> Unit,
     sourceCodeFocusRequester: FocusRequester,
     colorScheme: FindAndReplaceColorScheme,
-    onKeyEvents: (KeyEvent) -> Boolean = { false },
+    onKeyboardEvents: KeyboardEventFilter = { false },
     onClose: () -> Unit,
     onReplaced: (TextFieldValue) -> Unit,
     settings: FindAndReplaceSettings,
-    exitKeyEvent: KeyEventFilter = KeyEventFilterHolder(key = Key.Escape).toKeyEventFilter(),
+    exitKeyboardEvent: KeyboardEventFilter,
     extraStartPadding: Dp,
     extraEndPadding: Dp,
     extraTopPadding: Dp,
     keyboardType: KeyboardType,
+    externalKeyboardEvents: MutableSharedFlow<KeyboardEvent> = remember { MutableSharedFlow() },
+    onExternalKeyboardEventModifiersChange: (ExternalKeyboardEventModifiers) -> Unit,
 ) {
     var lastErrorMessage by remember { mutableStateOf("") }
     var isFindRegexError by remember { mutableStateOf(false) }
@@ -248,6 +248,7 @@ internal fun FindAndReplacePopup(
         }
     }
     val findFocusRequester: FocusRequester = remember { FocusRequester() }
+    var isFindFocused by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         findFocusRequester.requestFocus()
     }
@@ -255,12 +256,55 @@ internal fun FindAndReplacePopup(
         targetValue = if (popupState.showReplace) 0f else -90f,
     )
     val replaceFocusRequester = remember { FocusRequester() }
+    var isReplaceFocused by remember { mutableStateOf(false) }
     val findColor by animateColorAsState(
         if (isFindRegexError) colorScheme.errorColor else colorScheme.textColor
     )
     val replaceColor by animateColorAsState(
         if (isReplaceRegexError) colorScheme.errorColor else colorScheme.textColor
     )
+
+    fun Modifier.exitOnEscape() = onPreviewKeyEvent {
+        if (exitKeyboardEvent(PhysicalKeyboardEvent(it))) {
+            onClose()
+            sourceCodeFocusRequester.requestFocus()
+            onExternalKeyboardEventModifiersChange(ExternalKeyboardEventModifiers())
+            true
+        } else {
+            false
+        }
+    }
+
+    var findFieldValue by remember { mutableStateOf(TextFieldValue(popupState.findString)) }
+    LaunchedEffect(findFieldValue.text) {
+        onPopupStateChange(popupState.copy(findString = findFieldValue.text))
+        scrollToSelected()
+    }
+
+    var replaceFieldValue by remember { mutableStateOf(TextFieldValue(popupState.replaceString)) }
+    LaunchedEffect(replaceFieldValue.text) {
+        onPopupStateChange(popupState.copy(replaceString = replaceFieldValue.text))
+    }
+
+    LaunchedEffect(externalKeyboardEvents) {
+        externalKeyboardEvents.collect {
+            if (!isFindFocused && !isReplaceFocused) {
+                return@collect
+            }
+            if (exitKeyboardEvent(it)) {
+                onClose()
+                sourceCodeFocusRequester.requestFocus()
+                onExternalKeyboardEventModifiersChange(ExternalKeyboardEventModifiers())
+                return@collect
+            }
+            if (onKeyboardEvents(it)) return@collect
+            if (isFindFocused) {
+                applyingDefault(it, findFieldValue)?.let { findFieldValue = it }
+            } else {
+                applyingDefault(it, replaceFieldValue)?.let { replaceFieldValue = it }
+            }
+        }
+    }
 
     Column {
         BoxWithConstraints(
@@ -299,23 +343,20 @@ internal fun FindAndReplacePopup(
                         }
                     }
 
-                    fun Modifier.exitOnEscape() = onPreviewKeyEvent {
-                        if (exitKeyEvent(it)) {
-                            onClose()
-                            sourceCodeFocusRequester.requestFocus()
-                            true
-                        } else {
-                            false
-                        }
-                    }
                     Column(
                         modifier = Modifier.weight(1f),
                     ) {
                         BasicTextField(
-                            value = popupState.findString,
+                            value = findFieldValue,
                             onValueChange = {
-                                onPopupStateChange(popupState.copy(findString = it))
-                                scrollToSelected()
+                                val event = extractUniversalKeyboardEvent(findFieldValue, it)
+                                if (exitKeyboardEvent(event)) {
+                                    onClose()
+                                    sourceCodeFocusRequester.requestFocus()
+                                    onExternalKeyboardEventModifiersChange(ExternalKeyboardEventModifiers())
+                                } else if (!onKeyboardEvents(event)) {
+                                    findFieldValue = it
+                                }
                             },
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.None,
@@ -334,7 +375,8 @@ internal fun FindAndReplacePopup(
                                 .focusRequester(findFocusRequester)
                                 .fillMaxWidth()
                                 .exitOnEscape()
-                                .onPreviewKeyEvent { onKeyEvents(it) },
+                                .onPreviewKeyEvent { onKeyboardEvents(PhysicalKeyboardEvent(it)) }
+                                .onFocusChanged { isFindFocused = it.isFocused },
                             decorationBox = {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -446,8 +488,17 @@ internal fun FindAndReplacePopup(
                         }
                         AnimatedVisibility(popupState.showReplace) {
                             BasicTextField(
-                                value = popupState.replaceString,
-                                onValueChange = { onPopupStateChange(popupState.copy(replaceString = it)) },
+                                value = replaceFieldValue,
+                                onValueChange = {
+                                    val event = extractUniversalKeyboardEvent(replaceFieldValue, it)
+                                    if (exitKeyboardEvent(event)) {
+                                        onClose()
+                                        sourceCodeFocusRequester.requestFocus()
+                                        onExternalKeyboardEventModifiersChange(ExternalKeyboardEventModifiers())
+                                    } else if (!onKeyboardEvents(event)) {
+                                        replaceFieldValue = it
+                                    }
+                                },
                                 keyboardOptions = KeyboardOptions(
                                     capitalization = KeyboardCapitalization.None,
                                     autoCorrect = false,
@@ -460,7 +511,8 @@ internal fun FindAndReplacePopup(
                                     .focusRequester(replaceFocusRequester)
                                     .fillMaxWidth()
                                     .exitOnEscape()
-                                    .onPreviewKeyEvent { onKeyEvents(it) },
+                                    .onPreviewKeyEvent { onKeyboardEvents(PhysicalKeyboardEvent(it)) }
+                                    .onFocusChanged { isReplaceFocused = it.isFocused },
                                 decorationBox = {
                                     Box(
                                         modifier = Modifier.heightIn(
@@ -890,38 +942,36 @@ private fun FindResults(
     }
 }
 
-private val defaultfFindKeyEventFilter: KeyEventFilter =
-    KeyEventFilterHolder(key = Key.F, isCtrlPressed = true).toKeyEventFilter()
-
-private val defaultfReplaceKeyEventFilter: KeyEventFilter =
-    KeyEventFilterHolder(key = Key.R, isCtrlPressed = true).toKeyEventFilter()
-
 internal fun findAndReplace(
     state: BasicSourceCodeTextFieldState<KotlinComposeToken>,
     currentPopupState: FindAndReplaceState,
-    findKeyEventFilter: KeyEventFilter = defaultfFindKeyEventFilter,
-    replaceKeyEventFilter: KeyEventFilter = defaultfReplaceKeyEventFilter,
+    findKeyboardEventFilter: KeyboardEventFilter,
+    replaceKeyboardEventFilter: KeyboardEventFilter,
     onShowPopup: (FindAndReplaceState) -> Unit,
-): KeyEventHandler = f@{ keyEvent ->
-    val isFind = findKeyEventFilter(keyEvent)
-    val isReplace = replaceKeyEventFilter(keyEvent)
+    onExternalKeyboardEventModifiersChange: (ExternalKeyboardEventModifiers) -> Unit,
+): KeyboardEventHandler = f@{ keyboardEvent ->
+    val isFind = findKeyboardEventFilter(keyboardEvent)
+    val isReplace = replaceKeyboardEventFilter(keyboardEvent)
     if (isFind == isReplace) return@f null
     val newFindString =
         if (state.selection.collapsed) currentPopupState.findString
         else state.text.substring(state.selection.min, state.selection.max)
     onShowPopup(currentPopupState.copy(findString = newFindString, showReplace = isReplace))
-    null
+    onExternalKeyboardEventModifiersChange(ExternalKeyboardEventModifiers())
+    TextFieldValue(state.annotatedString, state.selection, state.composition)
 }
 
 internal fun findAndReplaceSwitcher(
     currentPopupState: FindAndReplaceState,
     onShowPopup: (FindAndReplaceState) -> Unit,
-    findKeyEventFilter: KeyEventFilter = defaultfFindKeyEventFilter,
-    replaceKeyEventFilter: KeyEventFilter = defaultfReplaceKeyEventFilter,
-): (KeyEvent) -> Boolean = f@{ keyEvent ->
-    val isFind = findKeyEventFilter(keyEvent)
-    val isReplace = replaceKeyEventFilter(keyEvent)
+    findKeyboardEventFilter: KeyboardEventFilter,
+    replaceKeyboardEventFilter: KeyboardEventFilter,
+    onExternalKeyboardEventModifiersChange: (ExternalKeyboardEventModifiers) -> Unit,
+): KeyboardEventFilter = f@{ keyboardEvent ->
+    val isFind = findKeyboardEventFilter(keyboardEvent)
+    val isReplace = replaceKeyboardEventFilter(keyboardEvent)
     if (isFind == isReplace) return@f false
     onShowPopup(currentPopupState.copy(showReplace = isReplace))
+    onExternalKeyboardEventModifiersChange(ExternalKeyboardEventModifiers())
     true
 }

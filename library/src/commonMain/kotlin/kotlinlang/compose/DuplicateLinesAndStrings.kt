@@ -5,15 +5,15 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.TextFieldValue
 import editor.basic.BasicSourceCodeTextFieldState
-import editor.basic.KeyEventFilter
-import editor.basic.KeyEventHandler
+import editor.basic.KeyboardEventFilter
+import editor.basic.KeyboardEventHandler
 import editor.basic.Token
 
 internal fun <T : Token> handleDuplicateLinesAndStrings(
     state: BasicSourceCodeTextFieldState<T>,
-    keyEventFilter: KeyEventFilter = KeyEventFilterHolder(key = Key.D, isCtrlPressed = true).toKeyEventFilter(),
-): KeyEventHandler = f@{ keyEvent ->
-    if (!keyEventFilter(keyEvent)) return@f null
+    keyboardEventFilter: KeyboardEventFilter,
+): KeyboardEventHandler = f@{ keyboardEvent ->
+    if (!keyboardEventFilter(keyboardEvent)) return@f null
 
     val copySelection = if (state.selection.collapsed) {
         val lineStart = generateSequence(state.selection.start - 1) { it - 1 }

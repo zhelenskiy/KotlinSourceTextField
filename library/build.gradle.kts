@@ -57,7 +57,7 @@ kotlin {
             implementation(compose.materialIconsExtended)
             implementation(compose.components.resources)
             implementation(libs.animate.content.single.dimension)
-            implementation(libs.basic.source.code.editor)
+            api(libs.basic.source.code.editor)
             implementation(libs.serialization)
         }
         desktopMain.dependencies {

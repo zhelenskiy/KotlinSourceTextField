@@ -1,15 +1,24 @@
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import editor.basic.KeyboardEvent
+import editor.basic.PhysicalKeyboardEvent
+import editor.basic.UniversalKeyboardEvent
 import kotlinlang.compose.*
 import kotlinlang.compose.TextInterval.TextPosition
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.launch
 
 val helloWorld = """
     fun main() {
@@ -57,6 +66,8 @@ fun App(
         DiagnosticDescriptor("Gav", DiagnosticSeverity.WARNING, TextInterval(TextPosition(2, 4), TextPosition(3, 6))),
         DiagnosticDescriptor("Moo", DiagnosticSeverity.INFO, TextInterval(TextPosition(2, 3), TextPosition(3, 5))),
     )
+    var externalKeyboardEventModifiers by remember(textFieldValue.text) { mutableStateOf(ExternalKeyboardEventModifiers()) }
+    val externalKeyboardEvents = remember { MutableSharedFlow<KeyboardEvent>() }
 
     Scaffold(
         snackbarHost = {
@@ -117,6 +128,31 @@ fun App(
                     }
                 }
             }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                val coroutineScope = rememberCoroutineScope()
+                KeyButtons(
+                    externalKeyboardEventModifiers = externalKeyboardEventModifiers,
+                    textColor = textColor,
+                    onEscPressed = {
+                        coroutineScope.launch {
+                            externalKeyboardEvents.emitPhysicalKeyboardEvent(Key.Escape, externalKeyboardEventModifiers)
+                        }
+                    },
+                    onTabPressed = {
+                        coroutineScope.launch {
+                            externalKeyboardEvents.emitUniversalKeyboardInsertEvent('\t')
+                        }
+                    },
+                    onModifierChanged = { externalKeyboardEventModifiers = it }
+                )
+            }
             KotlinSourceEditor(
                 textFieldValue = textFieldValue,
                 onTextFieldValueChange = { textFieldValue = it },
@@ -125,6 +161,9 @@ fun App(
                 sourceEditorFeaturesConfiguration = KotlinSourceEditorFeaturesConfiguration(),
                 snackbarHostState = snackbarHostState,
                 diagnostics = if (showFakeDiagnostics) fakeDiagnostics else emptyList(),
+                externalKeyboardEventModifiers = externalKeyboardEventModifiers,
+                externalKeyboardEvents = externalKeyboardEvents,
+                onExternalKeyboardEventModifiersChange = { externalKeyboardEventModifiers = it },
             )
         }
     }

@@ -14,6 +14,7 @@ import androidx.compose.ui.composed
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
@@ -27,6 +28,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
@@ -69,6 +71,7 @@ public data class KotlinSourceEditorFeaturesConfiguration(
     val removeFollowingClosingCharQuote: Boolean = true,
     val removeFollowingClosingStringQuote: Boolean = true,
     val duplicateStringsAndLines: Boolean = true,
+    val commentLines: Boolean = true,
     val commentBlock: Boolean = true,
     val enableFindAndReplace: Boolean = true,
     val highlightDiagnostics: Boolean = true,
@@ -148,30 +151,118 @@ public fun KotlinSourceEditorSettings(
     keyBindings = keyBindings,
 )
 
-public data class KeyBindings(
-    val commentChar: Char = '/',
-    val moveOffsetForward: KeyEventFilterHolder = KeyEventFilterHolder(key = Key.Tab),
-    val moveOffsetBackward: KeyEventFilterHolder = KeyEventFilterHolder(key = Key.Tab, isShiftPressed = true),
-    val duplicateStringsAndLines: KeyEventFilterHolder = KeyEventFilterHolder(key = Key.D, isCtrlPressed = true),
-    val find: KeyEventFilterHolder = KeyEventFilterHolder(key = Key.F, isCtrlPressed = true),
-    val replace: KeyEventFilterHolder = KeyEventFilterHolder(key = Key.R, isCtrlPressed = true),
-    val exit: KeyEventFilterHolder = KeyEventFilterHolder(key = Key.Escape),
+public data class ExternalKeyboardEventModifiers(
+    val isShiftPressed: Boolean = false,
+    val isCtrlPressed: Boolean = false,
+    val isAltPressed: Boolean = false,
+    val isMetaPressed: Boolean = false,
 )
 
-public data class KeyEventFilterHolder(
-    val key: Key,
+public data class KeyBindings(
+    val commentLines: KeyboardEventFilterHolder = KeyboardEventFilterHolder(
+        key = Key.Slash,
+        char = '/',
+        isCtrlPressed = true,
+    ),
+    val commentBlock: KeyboardEventFilterHolder = KeyboardEventFilterHolder(
+        key = Key.Slash,
+        char = '/',
+        isCtrlPressed = true,
+        isShiftPressed = true,
+    ),
+    val moveOffsetForward: KeyboardEventFilterHolder = KeyboardEventFilterHolder(
+        key = Key.Tab,
+        char = '\t',
+    ),
+    val moveOffsetBackward: KeyboardEventFilterHolder = KeyboardEventFilterHolder(
+        key = Key.Tab,
+        char = '\t',
+        isShiftPressed = true,
+    ),
+    val duplicateStringsAndLines: KeyboardEventFilterHolder = KeyboardEventFilterHolder(
+        key = Key.D,
+        char = 'D',
+        isCtrlPressed = true,
+    ),
+    val find: KeyboardEventFilterHolder = KeyboardEventFilterHolder(
+        key = Key.F,
+        char = 'F',
+        isCtrlPressed = true,
+    ),
+    val replace: KeyboardEventFilterHolder = KeyboardEventFilterHolder(
+        key = Key.R,
+        char = 'R',
+        isCtrlPressed = true,
+    ),
+    val exit: KeyboardEventFilterHolder = KeyboardEventFilterHolder(
+        key = Key.Escape,
+        universalKeyboardEvent = null,
+    ),
+)
+
+
+public data class UniversalKeyboardEventData(
+    val universalKeyEvent: UniversalKeyboardEvent?,
+    val ignoreCase: Boolean = true,
+)
+
+public data class KeyboardEventFilterHolder(
+    val key: Key?,
+    val universalKeyboardEvent: UniversalKeyboardEventData?,
     val isShiftPressed: Boolean = false,
     val isCtrlPressed: Boolean = false,
     val isAltPressed: Boolean = false,
     val isWinPressed: Boolean = false,
     val areCtrlAndWinReversedOnMac: Boolean = true,
-)
+) {
+    public constructor(
+        key: Key?,
+        char: Char,
+        ignoreCase: Boolean = true,
+        isShiftPressed: Boolean = false,
+        isCtrlPressed: Boolean = false,
+        isAltPressed: Boolean = false,
+        isWinPressed: Boolean = false,
+        areCtrlAndWinReversedOnMac: Boolean = true,
+    ) : this(
+        key = key,
+        universalKeyboardEvent = UniversalKeyboardEventData(UniversalKeyboardEvent.Insert(char), ignoreCase),
+        isShiftPressed = isShiftPressed,
+        isCtrlPressed = isCtrlPressed,
+        isAltPressed = isAltPressed,
+        isWinPressed = isWinPressed,
+        areCtrlAndWinReversedOnMac = areCtrlAndWinReversedOnMac
+    )
 
-internal fun KeyEventFilterHolder.toKeyEventFilter(): KeyEventFilter = { event ->
-    event.key == key && event.type == KeyEventType.KeyDown &&
-            event.isShiftPressed == isShiftPressed && event.isAltPressed == isAltPressed &&
-            if (areCtrlAndWinReversedOnMac && isApple) event.isCtrlPressed == isWinPressed && event.isMetaPressed == isCtrlPressed
-            else event.isCtrlPressed == isCtrlPressed && event.isMetaPressed == isWinPressed
+    init {
+        require(key != null || universalKeyboardEvent != null) { "Filter is always false" }
+    }
+}
+
+internal fun KeyboardEventFilterHolder.toKeyboardEventFilter(externalKeyboardEventModifiers: ExternalKeyboardEventModifiers): KeyboardEventFilter {
+    val keyEventFilter = { event: PhysicalKeyboardEvent ->
+        val isShiftPressed = event.isShiftPressed || externalKeyboardEventModifiers.isShiftPressed
+        val isAltPressed = event.isAltPressed || externalKeyboardEventModifiers.isAltPressed
+        val isCtrlPressed = event.isCtrlPressed || externalKeyboardEventModifiers.isCtrlPressed
+        val isMetaPressed = event.isMetaPressed || externalKeyboardEventModifiers.isMetaPressed
+        event.key == key && event.type == KeyEventType.KeyDown &&
+                isShiftPressed == this.isShiftPressed && isAltPressed == this.isAltPressed &&
+                if (areCtrlAndWinReversedOnMac && isApple) isCtrlPressed == this.isWinPressed && isMetaPressed == this.isCtrlPressed
+                else isCtrlPressed == this.isCtrlPressed && isMetaPressed == this.isWinPressed
+    }.asKeyboardEventFilter()
+    val universalEventFilter = g@{ keyboardEvent: KeyboardEvent ->
+        val (key, ignoreCase) = universalKeyboardEvent ?: return@g false
+        val keyEventsAreEqual =
+            key is UniversalKeyboardEvent.Backspace && keyboardEvent is UniversalKeyboardEvent.Backspace ||
+                    key is UniversalKeyboardEvent.Insert &&
+                    keyboardEvent is UniversalKeyboardEvent.Insert &&
+                    key.char.equals(keyboardEvent.char, ignoreCase = ignoreCase)
+        keyEventsAreEqual &&
+                isAltPressed == externalKeyboardEventModifiers.isAltPressed && isShiftPressed == externalKeyboardEventModifiers.isShiftPressed &&
+                (if (areCtrlAndWinReversedOnMac && isApple) isCtrlPressed == externalKeyboardEventModifiers.isMetaPressed && isWinPressed == externalKeyboardEventModifiers.isCtrlPressed
+                else isCtrlPressed == externalKeyboardEventModifiers.isCtrlPressed && isWinPressed == externalKeyboardEventModifiers.isMetaPressed)
+    }
+    return { keyEventFilter(it) || universalEventFilter(it) }
 }
 
 public data class DiagnosticsHighlightingSettings(
@@ -319,6 +410,9 @@ public val kotlinSourceEditorDefaultTextStyle: TextStyle
  * @param showFindAndReplaceState The mutable state for tracking the visibility of Find&Replace UI component.
  * @param findAndReplaceMutableState The mutable state for tracking the state of Find&Replace UI component.
  * @param visualSettings The settings for configuring the visual appearance of the Kotlin Source Editor.
+ * @param externalKeyboardEvents The external source of key events.
+ * @param externalKeyboardEventModifiers The external source of key event modifiers (Ctrl/Control, Alt/Option, Win/Cmd).
+ * @param onExternalKeyboardEventModifiersChange Updater for externalKeyboardEventModifiers.
  *
  */
 @Composable
@@ -342,6 +436,9 @@ public fun KotlinSourceEditor(
         mutableStateOf(FindAndReplaceState())
     },
     visualSettings: KotlinSourceEditorSettings = KotlinSourceEditorSettings(),
+    externalKeyboardEvents: MutableSharedFlow<KeyboardEvent> = remember { MutableSharedFlow() },
+    externalKeyboardEventModifiers: ExternalKeyboardEventModifiers = ExternalKeyboardEventModifiers(),
+    onExternalKeyboardEventModifiersChange: (ExternalKeyboardEventModifiers) -> Unit = {},
 ) {
     var codeTextFieldState: BasicSourceCodeTextFieldState<KotlinComposeToken> by remember(
         colorScheme, sourceEditorFeaturesConfiguration
@@ -382,6 +479,9 @@ public fun KotlinSourceEditor(
         showFindAndReplaceState = showFindAndReplaceState,
         findAndReplaceMutableState = findAndReplaceMutableState,
         visualSettings = visualSettings,
+        externalKeyboardEvents = externalKeyboardEvents,
+        externalKeyboardEventModifiers = externalKeyboardEventModifiers,
+        onExternalKeyboardEventModifiersChange = onExternalKeyboardEventModifiersChange,
     )
 }
 
@@ -401,7 +501,7 @@ private fun createKotlinSourceCodeTextFieldStateIgnoringKeyboardEvents(
             bracketMatcher = ::matchBrackets,
         )
     },
-    charEventHandler = { null },
+    keyboardEventHandler = { null },
 )
 
 private val preprocessors: List<Preprocessor> = listOf { replaceTabs(it) }
@@ -427,6 +527,9 @@ private val preprocessors: List<Preprocessor> = listOf { replaceTabs(it) }
  * @param showFindAndReplaceState The mutable state for tracking the visibility of Find&Replace UI component.
  * @param findAndReplaceMutableState The mutable state for tracking the state of Find&Replace UI component.
  * @param visualSettings The settings for configuring the visual appearance of the Kotlin Source Editor.
+ * @param externalKeyboardEvents The external source of key events.
+ * @param externalKeyboardEventModifiers The external source of key event modifiers (Ctrl/Control, Alt/Option, Win/Cmd).
+ * @param onExternalKeyboardEventModifiersChange Updater for externalKeyboardEventModifiers.
  *
  */
 @Composable
@@ -450,6 +553,9 @@ public fun KotlinSourceEditor(
         mutableStateOf(FindAndReplaceState())
     },
     visualSettings: KotlinSourceEditorSettings = KotlinSourceEditorSettings(),
+    externalKeyboardEvents: MutableSharedFlow<KeyboardEvent> = remember { MutableSharedFlow() },
+    externalKeyboardEventModifiers: ExternalKeyboardEventModifiers = ExternalKeyboardEventModifiers(),
+    onExternalKeyboardEventModifiersChange: (ExternalKeyboardEventModifiers) -> Unit = {},
 ) {
     val matchBrackets = remember {
         reuseResult<List<Token>, _> { matchBrackets<SingleStyleTokenChangingScope>(it) }
@@ -514,6 +620,36 @@ public fun KotlinSourceEditor(
         tooltipPointerOffset = currentPointerOffset
     }
 
+    var isTextFieldFocused by remember { mutableStateOf(false) }
+    val keyboardEventHandler: KeyboardEventHandler = makeEventHandler(
+        sourceEditorFeaturesConfiguration = sourceEditorFeaturesConfiguration,
+        codeTextFieldState = codeTextFieldState,
+        matchedBrackets = matchedBrackets,
+        keyBindings = visualSettings.keyBindings,
+        visualSettings = visualSettings,
+        findAndReplaceState = findAndReplaceState,
+        onFindAndReplaceStateChange = onFindAndReplaceStateChange,
+        showFindAndReplace = showFindAndReplace,
+        onShowFindAndReplaceStateChange = { showFindAndReplace = it },
+        externalKeyboardEventModifiers = externalKeyboardEventModifiers,
+        onExternalKeyboardEventModifiersChange = onExternalKeyboardEventModifiersChange,
+    ).let { handler ->
+        { event ->
+            val result = handler(event)
+            if (result != null) onExternalKeyboardEventModifiersChange(ExternalKeyboardEventModifiers())
+            result
+        }
+    }
+    LaunchedEffect(keyboardEventHandler, externalKeyboardEvents, isTextFieldFocused) {
+        externalKeyboardEvents.collect { keyboardEvent ->
+            if (isTextFieldFocused) {
+                val replacement = keyboardEventHandler(keyboardEvent)
+                    ?: applyingDefault(keyboardEvent, codeTextFieldState)
+                replacement?.let { externalTextFieldChanges.emit(it) }
+            }
+        }
+    }
+
     val topPadding = visualSettings.innerPadding.calculateTopPadding()
     val bottomPadding = visualSettings.innerPadding.calculateBottomPadding()
     BoxWithConstraints(modifier) {
@@ -550,24 +686,29 @@ public fun KotlinSourceEditor(
                         onFoundMatches(null)
                     },
                     onReplaced = { coroutineScope.launch { externalTextFieldChanges.emit(it) } },
-                    onKeyEvents = { event ->
-                        listOfNotNull(
-                            takeIf(sourceEditorFeaturesConfiguration.enableFindAndReplace) {
-                                findAndReplaceSwitcher(
-                                    currentPopupState = findAndReplaceState,
-                                    onShowPopup = onFindAndReplaceStateChange,
-                                    findKeyEventFilter = visualSettings.keyBindings.find.toKeyEventFilter(),
-                                    replaceKeyEventFilter = visualSettings.keyBindings.replace.toKeyEventFilter(),
-                                )
-                            },
-                        ).any { it(event) }
-                    },
+                    onKeyboardEvents = combineKeyboardEventFilters(takeIf(sourceEditorFeaturesConfiguration.enableFindAndReplace) {
+                        findAndReplaceSwitcher(
+                            currentPopupState = findAndReplaceState,
+                            onShowPopup = onFindAndReplaceStateChange,
+                            findKeyboardEventFilter = visualSettings.keyBindings.find.toKeyboardEventFilter(
+                                externalKeyboardEventModifiers
+                            ),
+                            replaceKeyboardEventFilter = visualSettings.keyBindings.replace.toKeyboardEventFilter(
+                                externalKeyboardEventModifiers
+                            ),
+                            onExternalKeyboardEventModifiersChange,
+                        )
+                    }),
                     settings = visualSettings.findAndReplaceSettings,
                     extraStartPadding = if (visualSettings.applyInnerPaddingToFindAndReplace) startPadding else 0.dp,
                     extraEndPadding = if (visualSettings.applyInnerPaddingToFindAndReplace) endPadding else 0.dp,
                     extraTopPadding = if (visualSettings.applyInnerPaddingToFindAndReplace) topPadding else 0.dp,
-                    exitKeyEvent = visualSettings.keyBindings.exit.toKeyEventFilter(),
+                    exitKeyboardEvent = visualSettings.keyBindings.exit.toKeyboardEventFilter(
+                        externalKeyboardEventModifiers
+                    ),
                     keyboardType = visualSettings.keyboardType,
+                    externalKeyboardEvents = externalKeyboardEvents,
+                    onExternalKeyboardEventModifiersChange = onExternalKeyboardEventModifiersChange,
                 )
             }
 
@@ -660,7 +801,8 @@ public fun KotlinSourceEditor(
                             // For some reason, checking maxValue > 0 is not enough during appearance of FindAndReplace
                             val pureHight = textSize.height * codeTextFieldState.lineOffsets.size
                             showVerticalScrollbarBasedOnHight = it.height <= pureHight
-                        },
+                        }
+                        .onFocusChanged { isTextFieldFocused = it.isFocused },
                     visualTransformation = visualTransformation,
                     additionalInnerComposable = { _, _ ->
                         androidx.compose.animation.AnimatedVisibility(
@@ -884,44 +1026,7 @@ public fun KotlinSourceEditor(
                             )
                         )
                     },
-                    keyEventHandler = combineKeyEventHandlers(
-                        takeIf(sourceEditorFeaturesConfiguration.indentCode) {
-                            handleMovingOffsets(
-                                state = codeTextFieldState,
-                                moveForwardFilter = visualSettings.keyBindings.moveOffsetForward.toKeyEventFilter(),
-                                moveBackwardFilter = visualSettings.keyBindings.moveOffsetBackward.toKeyEventFilter(),
-                            )
-                        },
-                        takeIf(sourceEditorFeaturesConfiguration.duplicateStringsAndLines) {
-                            handleDuplicateLinesAndStrings(
-                                state = codeTextFieldState,
-                                keyEventFilter = visualSettings.keyBindings.duplicateStringsAndLines.toKeyEventFilter(),
-                            )
-                        },
-                        takeIf(sourceEditorFeaturesConfiguration.enableFindAndReplace) {
-                            findAndReplace(
-                                state = codeTextFieldState,
-                                currentPopupState = findAndReplaceState,
-                                onShowPopup = {
-                                    showFindAndReplace =
-                                        if (showFindAndReplace && it == findAndReplaceState) {
-                                            false
-                                        } else {
-                                            onFindAndReplaceStateChange(it)
-                                            true
-                                        }
-                                },
-                                findKeyEventFilter = visualSettings.keyBindings.find.toKeyEventFilter(),
-                                replaceKeyEventFilter = visualSettings.keyBindings.replace.toKeyEventFilter(),
-                            )
-                        },
-                    ),
-                    charEventHandler = makeCharEventHandler(
-                        sourceEditorFeaturesConfiguration,
-                        codeTextFieldState,
-                        matchedBrackets,
-                        visualSettings.keyBindings,
-                    ),
+                    keyboardEventHandler = keyboardEventHandler,
                     cursorBrush = SolidColor(colorScheme.cursorColor),
                     horizontalThresholdEdgeChars = visualSettings.horizontalThresholdEdgeChars,
                     verticalThresholdEdgeLines = visualSettings.verticalThresholdEdgeLines,
@@ -932,6 +1037,70 @@ public fun KotlinSourceEditor(
             }
         }
     }
+}
+
+private fun applyingDefault(
+    keyboardEvent: KeyboardEvent,
+    codeTextFieldState: BasicSourceCodeTextFieldState<KotlinComposeToken>
+) = applyingDefault(
+    keyboardEvent,
+    TextFieldValue(codeTextFieldState.annotatedString, codeTextFieldState.selection, codeTextFieldState.composition)
+)
+
+internal fun applyingDefault(
+    keyboardEvent: KeyboardEvent,
+    textFieldValue: TextFieldValue,
+) = when (keyboardEvent) {
+    is UniversalKeyboardEvent.Backspace -> {
+        val newText = buildAnnotatedString {
+            append(textFieldValue.annotatedString, 0, textFieldValue.selection.min)
+            append(
+                textFieldValue.annotatedString,
+                textFieldValue.selection.max,
+                textFieldValue.text.length
+            )
+        }
+
+        fun remap(index: Int) = when {
+            index < textFieldValue.selection.min -> index
+            index >= textFieldValue.selection.max -> index - textFieldValue.selection.length
+            else -> textFieldValue.selection.max
+        }
+        TextFieldValue(
+            annotatedString = newText,
+            selection = textFieldValue.selection.let { TextRange(remap(it.start), remap(it.end)) },
+            composition = textFieldValue.composition?.let {
+                TextRange(remap(it.start), remap(it.end))
+            },
+        )
+    }
+
+    is UniversalKeyboardEvent.Insert -> {
+        val newText = buildAnnotatedString {
+            append(textFieldValue.annotatedString, 0, textFieldValue.selection.min)
+            append(keyboardEvent.char)
+            append(
+                textFieldValue.annotatedString,
+                textFieldValue.selection.max,
+                textFieldValue.text.length
+            )
+        }
+
+        fun remap(index: Int) = when {
+            index < textFieldValue.selection.min -> index
+            index >= textFieldValue.selection.max -> index - textFieldValue.selection.length + 1
+            else -> textFieldValue.selection.max
+        }
+        TextFieldValue(
+            annotatedString = newText,
+            selection = textFieldValue.selection.let { TextRange(remap(it.start), remap(it.end)) },
+            composition = textFieldValue.composition?.let {
+                TextRange(remap(it.start), remap(it.end))
+            },
+        )
+    }
+
+    else -> null
 }
 
 private fun Modifier.inConstraints(constraints: Constraints) = composed {
@@ -945,12 +1114,61 @@ private fun Modifier.inConstraints(constraints: Constraints) = composed {
     }
 }
 
-private fun makeCharEventHandler(
+private fun makeEventHandler(
     sourceEditorFeaturesConfiguration: KotlinSourceEditorFeaturesConfiguration,
     codeTextFieldState: BasicSourceCodeTextFieldState<KotlinComposeToken>,
     matchedBrackets: Map<SingleStyleTokenChangingScope, SingleStyleTokenChangingScope>,
-    keyBindings: KeyBindings
-) = combineCharEventHandlers(
+    keyBindings: KeyBindings,
+    visualSettings: KotlinSourceEditorSettings,
+    findAndReplaceState: FindAndReplaceState,
+    onFindAndReplaceStateChange: (FindAndReplaceState) -> Unit,
+    showFindAndReplace: Boolean,
+    onShowFindAndReplaceStateChange: (Boolean) -> Unit,
+    externalKeyboardEventModifiers: ExternalKeyboardEventModifiers,
+    onExternalKeyboardEventModifiersChange: (ExternalKeyboardEventModifiers) -> Unit,
+) = combineKeyboardEventHandlers(
+    takeIf(sourceEditorFeaturesConfiguration.indentCode) {
+        handleMovingOffsets(
+            state = codeTextFieldState,
+            moveForwardFilter = visualSettings.keyBindings.moveOffsetForward.toKeyboardEventFilter(
+                externalKeyboardEventModifiers
+            ),
+            moveBackwardFilter = visualSettings.keyBindings.moveOffsetBackward.toKeyboardEventFilter(
+                externalKeyboardEventModifiers
+            ),
+        )
+    },
+    takeIf(sourceEditorFeaturesConfiguration.duplicateStringsAndLines) {
+        handleDuplicateLinesAndStrings(
+            state = codeTextFieldState,
+            keyboardEventFilter = visualSettings.keyBindings.duplicateStringsAndLines.toKeyboardEventFilter(
+                externalKeyboardEventModifiers
+            ),
+        )
+    },
+    takeIf(sourceEditorFeaturesConfiguration.enableFindAndReplace) {
+        findAndReplace(
+            state = codeTextFieldState,
+            currentPopupState = findAndReplaceState,
+            onShowPopup = {
+                onShowFindAndReplaceStateChange(
+                    if (showFindAndReplace && it == findAndReplaceState) {
+                        false
+                    } else {
+                        onFindAndReplaceStateChange(it)
+                        true
+                    }
+                )
+            },
+            findKeyboardEventFilter = visualSettings.keyBindings.find.toKeyboardEventFilter(
+                externalKeyboardEventModifiers
+            ),
+            replaceKeyboardEventFilter = visualSettings.keyBindings.replace.toKeyboardEventFilter(
+                externalKeyboardEventModifiers
+            ),
+            onExternalKeyboardEventModifiersChange = onExternalKeyboardEventModifiersChange,
+        )
+    },
     takeIf(sourceEditorFeaturesConfiguration.reuseFollowingClosingBracket) {
         reusingCharsEventHandler(
             textFieldState = codeTextFieldState,
@@ -970,7 +1188,7 @@ private fun makeCharEventHandler(
         )
     },
     takeIf(sourceEditorFeaturesConfiguration.addClosingBracket) {
-        openingBracketCharEventHandler(
+        openingBracketEventHandler(
             textFieldState = codeTextFieldState,
             openingChar = '[',
             openingBracket = "[",
@@ -979,7 +1197,7 @@ private fun makeCharEventHandler(
         )
     },
     takeIf(sourceEditorFeaturesConfiguration.indentClosingBracket) {
-        closingBracketCharEventHandler(
+        closingBracketEventHandler(
             textFieldState = codeTextFieldState,
             openingBracket = "[",
             closingBracket = "]",
@@ -988,7 +1206,7 @@ private fun makeCharEventHandler(
         )
     },
     takeIf(sourceEditorFeaturesConfiguration.addClosingBracket) {
-        openingBracketCharEventHandler(
+        openingBracketEventHandler(
             textFieldState = codeTextFieldState,
             openingChar = '(',
             openingBracket = "(",
@@ -997,7 +1215,7 @@ private fun makeCharEventHandler(
         )
     },
     takeIf(sourceEditorFeaturesConfiguration.indentClosingBracket) {
-        closingBracketCharEventHandler(
+        closingBracketEventHandler(
             textFieldState = codeTextFieldState,
             openingBracket = "(",
             closingBracket = ")",
@@ -1006,7 +1224,7 @@ private fun makeCharEventHandler(
         )
     },
     /*takeIf(configuration.addClosingBracket) {
-        openingBracketCharEventHandler(
+        openingBracketEventHandler(
             textFieldState = codeTextFieldState,
             openingChar = '<',
             openingBracket = "<",
@@ -1015,7 +1233,7 @@ private fun makeCharEventHandler(
         )
     },
     takeIf(configuration.indentClosingBracket) {
-        closingBracketCharEventHandler(
+        closingBracketEventHandler(
             textFieldState = codeTextFieldState,
             openingBracket = "<",
             closingBracket = ">",
@@ -1024,7 +1242,7 @@ private fun makeCharEventHandler(
         )
     },*/ // 2 < 3; 3 > 2
     takeIf(sourceEditorFeaturesConfiguration.addClosingBracket) {
-        openingBracketCharEventHandler(
+        openingBracketEventHandler(
             textFieldState = codeTextFieldState,
             openingChar = '{',
             openingBracket = "{",
@@ -1033,7 +1251,7 @@ private fun makeCharEventHandler(
         )
     },
     takeIf(sourceEditorFeaturesConfiguration.indentClosingBracket) {
-        closingBracketCharEventHandler(
+        closingBracketEventHandler(
             textFieldState = codeTextFieldState,
             openingBracket = "{",
             closingBracket = "}",
@@ -1042,7 +1260,7 @@ private fun makeCharEventHandler(
         )
     },
     takeIf(sourceEditorFeaturesConfiguration.addClosingCharQuote) {
-        openingBracketCharEventHandler(
+        openingBracketEventHandler(
             textFieldState = codeTextFieldState,
             openingChar = '\'',
             openingBracket = "'",
@@ -1058,7 +1276,7 @@ private fun makeCharEventHandler(
         )
     },
     takeIf(sourceEditorFeaturesConfiguration.addClosingSingleLineStringQuote) {
-        openingBracketCharEventHandler(
+        openingBracketEventHandler(
             textFieldState = codeTextFieldState,
             openingChar = '"',
             openingBracket = "\"",
@@ -1068,53 +1286,53 @@ private fun makeCharEventHandler(
         )
     },
     takeIf(sourceEditorFeaturesConfiguration.indentNewLine) {
-        newLineCharEventHandler(
+        newLineEventHandler(
             textFieldState = codeTextFieldState,
             matchedBrackets = matchedBrackets,
         )
     },
     takeIf(sourceEditorFeaturesConfiguration.removeIndentOnBackspace) {
-        removeIndentBackspaceCharEventHandler(
+        removeIndentBackspaceEventHandler(
             textFieldState = codeTextFieldState,
         )
     },
     takeIf(sourceEditorFeaturesConfiguration.removeFollowingClosingBracket) {
-        removeEmptyBracesBackspaceCharEventHandler(
+        removeEmptyBracesBackspaceEventHandler(
             textFieldState = codeTextFieldState,
             openingBracket = "[",
             closingBracket = "]",
         )
     },
     takeIf(sourceEditorFeaturesConfiguration.removeFollowingClosingBracket) {
-        removeEmptyBracesBackspaceCharEventHandler(
+        removeEmptyBracesBackspaceEventHandler(
             textFieldState = codeTextFieldState,
             openingBracket = "(",
             closingBracket = ")",
         )
     },
     takeIf(sourceEditorFeaturesConfiguration.removeFollowingClosingBracket) {
-        removeEmptyBracesBackspaceCharEventHandler(
+        removeEmptyBracesBackspaceEventHandler(
             textFieldState = codeTextFieldState,
             openingBracket = "<",
             closingBracket = ">",
         )
     },
     takeIf(sourceEditorFeaturesConfiguration.removeFollowingClosingBracket) {
-        removeEmptyBracesBackspaceCharEventHandler(
+        removeEmptyBracesBackspaceEventHandler(
             textFieldState = codeTextFieldState,
             openingBracket = "{",
             closingBracket = "}",
         )
     },
     takeIf(sourceEditorFeaturesConfiguration.removeFollowingClosingCharQuote) {
-        removeEmptyBracesBackspaceCharEventHandler(
+        removeEmptyBracesBackspaceEventHandler(
             textFieldState = codeTextFieldState,
             openingBracket = "'",
             closingBracket = "'",
         )
     },
     takeIf(sourceEditorFeaturesConfiguration.removeFollowingClosingStringQuote) {
-        removeEmptyBracesBackspaceCharEventHandler(
+        removeEmptyBracesBackspaceEventHandler(
             textFieldState = codeTextFieldState,
             openingBracket = "\"",
             closingBracket = "\"",
@@ -1123,7 +1341,13 @@ private fun makeCharEventHandler(
     takeIf(sourceEditorFeaturesConfiguration.commentBlock) {
         commentBlock(
             state = codeTextFieldState,
-            char = keyBindings.commentChar,
+            keyboardEventFilter = keyBindings.commentBlock.toKeyboardEventFilter(externalKeyboardEventModifiers),
+        )
+    },
+    takeIf(sourceEditorFeaturesConfiguration.commentLines) {
+        commentLines(
+            state = codeTextFieldState,
+            keyboardEventFilter = keyBindings.commentLines.toKeyboardEventFilter(externalKeyboardEventModifiers),
         )
     },
 )
@@ -1307,4 +1531,32 @@ private fun chooseStickyHeaderLines(
         return chooseStickyHeaderLines(recursiveParenthesis, codeTextFieldState, matchedBrackets)
     }
     return null
+}
+
+public suspend fun MutableSharedFlow<KeyboardEvent>.emitPhysicalKeyboardEvent(
+    key: Key,
+    externalKeyboardEventModifiers: ExternalKeyboardEventModifiers,
+    code: Int = 0,
+) {
+    for (keyEventType in listOf(KeyEventType.KeyDown, KeyEventType.KeyUp)) {
+        emit(
+            PhysicalKeyboardEvent(
+                key = key,
+                utf16CodePoint = code,
+                type = keyEventType,
+                isShiftPressed = externalKeyboardEventModifiers.isShiftPressed,
+                isCtrlPressed = externalKeyboardEventModifiers.isCtrlPressed,
+                isAltPressed = externalKeyboardEventModifiers.isAltPressed,
+                isMetaPressed = externalKeyboardEventModifiers.isMetaPressed,
+            )
+        )
+    }
+}
+
+public suspend fun MutableSharedFlow<KeyboardEvent>.emitUniversalKeyboardInsertEvent(char: Char) {
+    emit(UniversalKeyboardEvent.Insert(char))
+}
+
+public suspend fun MutableSharedFlow<KeyboardEvent>.emitUniversalKeyboardBackspaceEvent() {
+    emit(UniversalKeyboardEvent.Backspace)
 }
