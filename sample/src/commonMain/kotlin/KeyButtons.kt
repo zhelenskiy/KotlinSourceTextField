@@ -1,8 +1,11 @@
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import kotlinlang.compose.ExternalKeyboardEventModifiers
 
 @Composable
@@ -20,6 +23,7 @@ fun KeyButtons(
     ) {
         Text("Esc", color = textColor)
     }
+    Spacer(Modifier.width(10.dp))
     Button(
         onClick = onTabPressed,
         colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
@@ -27,6 +31,7 @@ fun KeyButtons(
     ) {
         Text("Tab", color = textColor)
     }
+    Spacer(Modifier.width(10.dp))
     Button(
         onClick = { onModifierChanged(externalKeyboardEventModifiers.copy(isShiftPressed = !externalKeyboardEventModifiers.isShiftPressed)) },
         colors = ButtonDefaults.buttonColors(containerColor = if (externalKeyboardEventModifiers.isShiftPressed) MaterialTheme.colorScheme.primary else Color.Transparent),
@@ -34,6 +39,7 @@ fun KeyButtons(
     ) {
         Text("Shift", color = if (externalKeyboardEventModifiers.isShiftPressed) MaterialTheme.colorScheme.onPrimary else textColor)
     }
+    Spacer(Modifier.width(10.dp))
     Button(
         onClick = { onModifierChanged(externalKeyboardEventModifiers.copy(isCtrlPressed = !externalKeyboardEventModifiers.isCtrlPressed)) },
         colors = ButtonDefaults.buttonColors(containerColor = if (externalKeyboardEventModifiers.isCtrlPressed) MaterialTheme.colorScheme.primary else Color.Transparent),
@@ -41,6 +47,7 @@ fun KeyButtons(
     ) {
         Text("Ctrl", color = if (externalKeyboardEventModifiers.isCtrlPressed) MaterialTheme.colorScheme.onPrimary else textColor)
     }
+    Spacer(Modifier.width(10.dp))
     Button(
         onClick = {  onModifierChanged(externalKeyboardEventModifiers.copy(isAltPressed = !externalKeyboardEventModifiers.isAltPressed))  },
         colors = ButtonDefaults.buttonColors(containerColor = if (externalKeyboardEventModifiers.isAltPressed) MaterialTheme.colorScheme.primary else Color.Transparent),
@@ -48,6 +55,7 @@ fun KeyButtons(
     ) {
         Text("Alt", color = if (externalKeyboardEventModifiers.isAltPressed) MaterialTheme.colorScheme.onPrimary else textColor)
     }
+    Spacer(Modifier.width(10.dp))
     Button(
         onClick = {  onModifierChanged(externalKeyboardEventModifiers.copy(isMetaPressed = !externalKeyboardEventModifiers.isMetaPressed))  },
         colors = ButtonDefaults.buttonColors(containerColor = if (externalKeyboardEventModifiers.isMetaPressed) MaterialTheme.colorScheme.primary else Color.Transparent),

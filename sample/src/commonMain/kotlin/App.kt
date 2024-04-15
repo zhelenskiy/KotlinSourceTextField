@@ -9,12 +9,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import editor.basic.KeyboardEvent
-import editor.basic.PhysicalKeyboardEvent
-import editor.basic.UniversalKeyboardEvent
 import kotlinlang.compose.*
 import kotlinlang.compose.TextInterval.TextPosition
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -66,7 +63,7 @@ fun App(
         DiagnosticDescriptor("Gav", DiagnosticSeverity.WARNING, TextInterval(TextPosition(2, 4), TextPosition(3, 6))),
         DiagnosticDescriptor("Moo", DiagnosticSeverity.INFO, TextInterval(TextPosition(2, 3), TextPosition(3, 5))),
     )
-    var externalKeyboardEventModifiers by remember(textFieldValue.text) { mutableStateOf(ExternalKeyboardEventModifiers()) }
+    var externalKeyboardEventModifiers by remember { mutableStateOf(ExternalKeyboardEventModifiers()) }
     val externalKeyboardEvents = remember { MutableSharedFlow<KeyboardEvent>() }
 
     Scaffold(

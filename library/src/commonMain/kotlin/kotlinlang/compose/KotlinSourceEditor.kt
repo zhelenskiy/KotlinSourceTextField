@@ -265,6 +265,88 @@ internal fun KeyboardEventFilterHolder.toKeyboardEventFilter(externalKeyboardEve
     return { keyEventFilter(it) || universalEventFilter(it) }
 }
 
+internal fun Modifier.trackKeyModifierEvents(
+    externalKeyboardEventModifiers: ExternalKeyboardEventModifiers,
+    onExternalKeyboardEventModifiersChange: (ExternalKeyboardEventModifiers) -> Unit
+) = onPreviewKeyEvent { keyEvent ->
+    when (keyEvent.key) {
+        Key.ShiftLeft, Key.ShiftRight -> {
+            when (keyEvent.type) {
+                KeyEventType.KeyDown -> onExternalKeyboardEventModifiersChange(
+                    externalKeyboardEventModifiers.copy(
+                        isShiftPressed = true
+                    )
+                )
+
+                KeyEventType.KeyUp -> onExternalKeyboardEventModifiersChange(
+                    externalKeyboardEventModifiers.copy(
+                        isShiftPressed = false
+                    )
+                )
+
+                else -> return@onPreviewKeyEvent false
+            }
+        }
+
+        Key.CtrlLeft, Key.CtrlRight -> {
+            when (keyEvent.type) {
+                KeyEventType.KeyDown -> onExternalKeyboardEventModifiersChange(
+                    externalKeyboardEventModifiers.copy(
+                        isCtrlPressed = true
+                    )
+                )
+
+                KeyEventType.KeyUp -> onExternalKeyboardEventModifiersChange(
+                    externalKeyboardEventModifiers.copy(
+                        isCtrlPressed = false
+                    )
+                )
+
+                else -> return@onPreviewKeyEvent false
+            }
+        }
+
+        Key.AltLeft, Key.AltRight -> {
+            when (keyEvent.type) {
+                KeyEventType.KeyDown -> onExternalKeyboardEventModifiersChange(
+                    externalKeyboardEventModifiers.copy(
+                        isAltPressed = true
+                    )
+                )
+
+                KeyEventType.KeyUp -> onExternalKeyboardEventModifiersChange(
+                    externalKeyboardEventModifiers.copy(
+                        isAltPressed = false
+                    )
+                )
+
+                else -> return@onPreviewKeyEvent false
+            }
+        }
+
+        Key.MetaLeft, Key.MetaRight -> {
+            when (keyEvent.type) {
+                KeyEventType.KeyDown -> onExternalKeyboardEventModifiersChange(
+                    externalKeyboardEventModifiers.copy(
+                        isMetaPressed = true
+                    )
+                )
+
+                KeyEventType.KeyUp -> onExternalKeyboardEventModifiersChange(
+                    externalKeyboardEventModifiers.copy(
+                        isMetaPressed = false
+                    )
+                )
+
+                else -> return@onPreviewKeyEvent false
+            }
+        }
+
+        else -> return@onPreviewKeyEvent false
+    }
+    true
+}
+
 public data class DiagnosticsHighlightingSettings(
     val thickness: Dp = 3.dp,
 )
@@ -645,7 +727,10 @@ public fun KotlinSourceEditor(
             if (isTextFieldFocused) {
                 val replacement = keyboardEventHandler(keyboardEvent)
                     ?: applyingDefault(keyboardEvent, codeTextFieldState)
-                replacement?.let { externalTextFieldChanges.emit(it) }
+                replacement?.let {
+                    externalTextFieldChanges.emit(it)
+                    onExternalKeyboardEventModifiersChange(ExternalKeyboardEventModifiers())
+                }
             }
         }
     }
@@ -708,6 +793,7 @@ public fun KotlinSourceEditor(
                     ),
                     keyboardType = visualSettings.keyboardType,
                     externalKeyboardEvents = externalKeyboardEvents,
+                    externalKeyboardEventModifiers = externalKeyboardEventModifiers,
                     onExternalKeyboardEventModifiersChange = onExternalKeyboardEventModifiersChange,
                 )
             }
@@ -781,7 +867,12 @@ public fun KotlinSourceEditor(
                 ) ?: VisualTransformation.None
                 BasicSourceCodeTextField(
                     state = codeTextFieldState,
-                    onStateUpdate = onCodeTextFieldStateChange,
+                    onStateUpdate = {
+                        if (it.text != codeTextFieldState.text) {
+                            onExternalKeyboardEventModifiersChange(ExternalKeyboardEventModifiers())
+                        }
+                        onCodeTextFieldStateChange(it)
+                    },
                     preprocessors = preprocessors,
                     externalTextFieldChanges = externalTextFieldChanges,
                     tokenize = {
@@ -802,7 +893,8 @@ public fun KotlinSourceEditor(
                             val pureHight = textSize.height * codeTextFieldState.lineOffsets.size
                             showVerticalScrollbarBasedOnHight = it.height <= pureHight
                         }
-                        .onFocusChanged { isTextFieldFocused = it.isFocused },
+                        .onFocusChanged { isTextFieldFocused = it.isFocused }
+                        .trackKeyModifierEvents(externalKeyboardEventModifiers, onExternalKeyboardEventModifiersChange),
                     visualTransformation = visualTransformation,
                     additionalInnerComposable = { _, _ ->
                         androidx.compose.animation.AnimatedVisibility(

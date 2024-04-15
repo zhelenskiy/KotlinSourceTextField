@@ -182,6 +182,7 @@ internal fun FindAndReplacePopup(
     extraTopPadding: Dp,
     keyboardType: KeyboardType,
     externalKeyboardEvents: MutableSharedFlow<KeyboardEvent> = remember { MutableSharedFlow() },
+    externalKeyboardEventModifiers: ExternalKeyboardEventModifiers,
     onExternalKeyboardEventModifiersChange: (ExternalKeyboardEventModifiers) -> Unit,
 ) {
     var lastErrorMessage by remember { mutableStateOf("") }
@@ -279,11 +280,13 @@ internal fun FindAndReplacePopup(
     LaunchedEffect(findFieldValue.text) {
         onPopupStateChange(popupState.copy(findString = findFieldValue.text))
         scrollToSelected()
+        onExternalKeyboardEventModifiersChange(ExternalKeyboardEventModifiers())
     }
 
     var replaceFieldValue by remember { mutableStateOf(TextFieldValue(popupState.replaceString)) }
     LaunchedEffect(replaceFieldValue.text) {
         onPopupStateChange(popupState.copy(replaceString = replaceFieldValue.text))
+        onExternalKeyboardEventModifiersChange(ExternalKeyboardEventModifiers())
     }
 
     LaunchedEffect(externalKeyboardEvents) {
@@ -303,6 +306,7 @@ internal fun FindAndReplacePopup(
             } else {
                 applyingDefault(it, replaceFieldValue)?.let { replaceFieldValue = it }
             }
+            onExternalKeyboardEventModifiersChange(ExternalKeyboardEventModifiers())
         }
     }
 
@@ -376,7 +380,8 @@ internal fun FindAndReplacePopup(
                                 .fillMaxWidth()
                                 .exitOnEscape()
                                 .onPreviewKeyEvent { onKeyboardEvents(PhysicalKeyboardEvent(it)) }
-                                .onFocusChanged { isFindFocused = it.isFocused },
+                                .onFocusChanged { isFindFocused = it.isFocused }
+                                .trackKeyModifierEvents(externalKeyboardEventModifiers, onExternalKeyboardEventModifiersChange),
                             decorationBox = {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -512,7 +517,8 @@ internal fun FindAndReplacePopup(
                                     .fillMaxWidth()
                                     .exitOnEscape()
                                     .onPreviewKeyEvent { onKeyboardEvents(PhysicalKeyboardEvent(it)) }
-                                    .onFocusChanged { isReplaceFocused = it.isFocused },
+                                    .onFocusChanged { isReplaceFocused = it.isFocused }
+                                    .trackKeyModifierEvents(externalKeyboardEventModifiers, onExternalKeyboardEventModifiersChange),
                                 decorationBox = {
                                     Box(
                                         modifier = Modifier.heightIn(
