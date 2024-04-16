@@ -1628,13 +1628,11 @@ private fun chooseStickyHeaderLines(
 public suspend fun MutableSharedFlow<KeyboardEvent>.emitPhysicalKeyboardEvent(
     key: Key,
     externalKeyboardEventModifiers: ExternalKeyboardEventModifiers,
-    code: Int = 0,
 ) {
     for (keyEventType in listOf(KeyEventType.KeyDown, KeyEventType.KeyUp)) {
         emit(
             PhysicalKeyboardEvent(
                 key = key,
-                utf16CodePoint = code,
                 type = keyEventType,
                 isShiftPressed = externalKeyboardEventModifiers.isShiftPressed,
                 isCtrlPressed = externalKeyboardEventModifiers.isCtrlPressed,
