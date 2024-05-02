@@ -1,11 +1,12 @@
 # KotlinSourceTextField
 
-This project provides customizable Kotlin source code editor for Compose Multiplatform (Desktop, Android, iOS).
+This project provides customizable Kotlin source code editor for Compose Multiplatform (Desktop, Android, iOS, Web).
 
 <div style="flex-wrap: wrap; align-self: center">
 <img src="readmeMedia/iphone_light.png" style="height: 500px"/>
 <img src="readmeMedia/android_dark.png" style="height: 500px"/>
 <img src="readmeMedia/desktop_light.png" style="height: 500px"/>
+<img src="readmeMedia/web_dark.png" style="height: 500px"/>
 </div>
 
 
