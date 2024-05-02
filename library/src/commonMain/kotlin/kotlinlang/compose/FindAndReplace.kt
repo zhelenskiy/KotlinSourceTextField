@@ -215,7 +215,7 @@ internal fun FindAndReplacePopup(
         yield()
 
         onMatchedResultChange(
-            withContext(Dispatchers.IO) {
+            regexDispatcher {
                 regex.findAll(codeTextFieldState.text).toList().also { yield() }
             }
         )
@@ -223,7 +223,7 @@ internal fun FindAndReplacePopup(
 
     LaunchedEffect(popupState, codeTextFieldState.text) {
         if (popupState.isRegex) {
-            Dispatchers.IO {
+            regexDispatcher {
                 isReplaceRegexError = makeRegexSafely(popupState)
                     .mapCatching { it.replace(codeTextFieldState.text, popupState.replaceString) }
                     .isFailure
@@ -654,8 +654,10 @@ internal fun FindAndReplacePopup(
     }
 }
 
+internal expect val regexDispatcher: CoroutineDispatcher
+
 private suspend fun makeRegexSafely(popupState: FindAndReplaceState) =
-    withContext(Dispatchers.IO) {
+    regexDispatcher {
         runCatching {
             val string = when {
                 popupState.isRegex -> popupState.findString
