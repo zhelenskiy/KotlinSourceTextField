@@ -53,9 +53,11 @@ import editor.basic.*
 import kotlinlang.utils.size
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.serialization.Serializable
 import org.jetbrains.compose.resources.ExperimentalResourceApi
 import org.jetbrains.compose.resources.painterResource
 
+@Serializable
 public data class FindAndReplaceState(
     val findString: String = "",
     val matchCase: Boolean = false,
