@@ -953,6 +953,26 @@ class LexerTests {
         )
 
         interpolationTests(quote, MultiLineStringLiteralStart, MultiLineStringLiteralEnd)
+        
+        for (quotNumber in 0..20) {
+            verifyOutput(
+                input = "\"".repeat(quotNumber + 6),
+                expectedTokens = listOfNotNull(
+                    MultiLineStringLiteralStart,
+                    RegularLiteral("\"".repeat(quotNumber)).takeIf { quotNumber > 0 },
+                    MultiLineStringLiteralEnd
+                )
+            )
+            verifyOutput(
+                input = "\"".repeat(quotNumber + 6) +"+3",
+                expectedTokens = listOfNotNull(
+                    MultiLineStringLiteralStart,
+                    RegularLiteral("\"".repeat(quotNumber)).takeIf { quotNumber > 0 },
+                    MultiLineStringLiteralEnd,
+                    Add, IntegralNumberLiteral("3")
+                )
+            )
+        }
     }
 
     @Test

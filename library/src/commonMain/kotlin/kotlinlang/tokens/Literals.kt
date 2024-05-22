@@ -243,6 +243,8 @@ internal fun KotlinLexer.readMultiLineLiteral(): List<KotlinToken>? = buildList 
         }
         val end = readString("\"\"\"")
         if (end != null) {
+            val afterEnd = readWhile { it == '"' }
+            if (afterEnd.isNotEmpty()) add(Text.RegularLiteral(afterEnd))
             mergeLastRegularLiterals()
             add(Text.MultiLineStringLiteralEnd)
             break
