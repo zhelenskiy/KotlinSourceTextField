@@ -239,7 +239,7 @@ public data class KeyboardEventFilterHolder(
     }
 }
 
-internal fun KeyboardEventFilterHolder.toKeyboardEventFilter(externalKeyboardEventModifiers: ExternalKeyboardEventModifiers): KeyboardEventFilter {
+public fun KeyboardEventFilterHolder.toKeyboardEventFilter(externalKeyboardEventModifiers: ExternalKeyboardEventModifiers): KeyboardEventFilter {
     val keyEventFilter = { event: PhysicalKeyboardEvent ->
         val isShiftPressed = event.isShiftPressed || externalKeyboardEventModifiers.isShiftPressed
         val isAltPressed = event.isAltPressed || externalKeyboardEventModifiers.isAltPressed
