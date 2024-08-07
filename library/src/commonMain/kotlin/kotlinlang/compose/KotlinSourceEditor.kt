@@ -521,6 +521,7 @@ public fun KotlinSourceEditor(
     externalKeyboardEvents: MutableSharedFlow<KeyboardEvent> = remember { MutableSharedFlow() },
     externalKeyboardEventModifiers: ExternalKeyboardEventModifiers = ExternalKeyboardEventModifiers(),
     onExternalKeyboardEventModifiersChange: (ExternalKeyboardEventModifiers) -> Unit = {},
+    additionalKeyEventHandlers: List<KeyboardEventHandler> = emptyList(),
 ) {
     var codeTextFieldState: BasicSourceCodeTextFieldState<KotlinComposeToken> by remember(
         colorScheme, sourceEditorFeaturesConfiguration
@@ -564,6 +565,7 @@ public fun KotlinSourceEditor(
         externalKeyboardEvents = externalKeyboardEvents,
         externalKeyboardEventModifiers = externalKeyboardEventModifiers,
         onExternalKeyboardEventModifiersChange = onExternalKeyboardEventModifiersChange,
+        additionalKeyEventHandlers = additionalKeyEventHandlers,
     )
 }
 
@@ -638,6 +640,7 @@ public fun KotlinSourceEditor(
     externalKeyboardEvents: MutableSharedFlow<KeyboardEvent> = remember { MutableSharedFlow() },
     externalKeyboardEventModifiers: ExternalKeyboardEventModifiers = ExternalKeyboardEventModifiers(),
     onExternalKeyboardEventModifiersChange: (ExternalKeyboardEventModifiers) -> Unit = {},
+    additionalKeyEventHandlers: List<KeyboardEventHandler> = emptyList(),
 ) {
     val matchBrackets = remember {
         reuseResult<List<Token>, _> { matchBrackets<SingleStyleTokenChangingScope>(it) }
@@ -715,6 +718,7 @@ public fun KotlinSourceEditor(
         onShowFindAndReplaceStateChange = { showFindAndReplace = it },
         externalKeyboardEventModifiers = externalKeyboardEventModifiers,
         onExternalKeyboardEventModifiersChange = onExternalKeyboardEventModifiersChange,
+        additionalKeyEventHandlers = additionalKeyEventHandlers,
     ).let { handler ->
         { event ->
             val result = handler(event)
@@ -1218,6 +1222,7 @@ private fun makeEventHandler(
     onShowFindAndReplaceStateChange: (Boolean) -> Unit,
     externalKeyboardEventModifiers: ExternalKeyboardEventModifiers,
     onExternalKeyboardEventModifiersChange: (ExternalKeyboardEventModifiers) -> Unit,
+    additionalKeyEventHandlers: List<KeyboardEventHandler>,
 ) = combineKeyboardEventHandlers(
     takeIf(sourceEditorFeaturesConfiguration.indentCode) {
         handleMovingOffsets(
@@ -1442,6 +1447,7 @@ private fun makeEventHandler(
             keyboardEventFilter = keyBindings.commentLines.toKeyboardEventFilter(externalKeyboardEventModifiers),
         )
     },
+    *additionalKeyEventHandlers.toTypedArray(),
 )
 
 private val diagnosticsComparator = compareBy<DiagnosticDescriptor> { it.severity }
