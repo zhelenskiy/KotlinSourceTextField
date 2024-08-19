@@ -900,7 +900,7 @@ public fun KotlinSourceEditor(
                         .onFocusChanged { isTextFieldFocused = it.isFocused }
                         .trackKeyModifierEvents(externalKeyboardEventModifiers, onExternalKeyboardEventModifiersChange),
                     visualTransformation = visualTransformation,
-                    additionalInnerComposable = { _, _ ->
+                    additionalInnerComposable = { _, mainContent ->
                         androidx.compose.animation.AnimatedVisibility(
                             visible = showIndentation,
                             enter = fadeIn(),
@@ -913,6 +913,7 @@ public fun KotlinSourceEditor(
                                 width = visualSettings.indentationLinesSettings.thickness,
                             )
                         }
+                        mainContent()
                         androidx.compose.animation.AnimatedVisibility(
                             visible = sourceEditorFeaturesConfiguration.highlightDiagnostics,
                             enter = fadeIn(),
@@ -961,7 +962,7 @@ public fun KotlinSourceEditor(
                                     top = textFieldPadding.calculateTopPadding(),
                                 ),
                                 backgroundColor = colorScheme.backgroundColor,
-                                additionalInnerComposable = { linesToWrite, _ ->
+                                additionalInnerComposable = { linesToWrite, mainContent ->
                                     val lineMapping = linesToWrite.keys.withIndex()
                                         .associate { (index, line) -> line to index }
                                     androidx.compose.animation.AnimatedVisibility(
@@ -977,6 +978,7 @@ public fun KotlinSourceEditor(
                                             width = visualSettings.indentationLinesSettings.thickness,
                                         )
                                     }
+                                    mainContent()
                                     androidx.compose.animation.AnimatedVisibility(
                                         visible = sourceEditorFeaturesConfiguration.highlightDiagnostics,
                                         enter = fadeIn(),
