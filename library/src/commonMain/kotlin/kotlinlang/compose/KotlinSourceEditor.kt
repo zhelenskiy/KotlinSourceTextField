@@ -38,7 +38,6 @@ import editor.basic.*
 import kotlinlang.tokens.KotlinToken
 import kotlinlang.tokens.tokenizeKotlin
 import kotlinlang.utils.*
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -246,21 +245,21 @@ public fun KeyboardEventFilterHolder.toKeyboardEventFilter(externalKeyboardEvent
         val isCtrlPressed = event.isCtrlPressed || externalKeyboardEventModifiers.isCtrlPressed
         val isMetaPressed = event.isMetaPressed || externalKeyboardEventModifiers.isMetaPressed
         event.key == key && event.type == KeyEventType.KeyDown &&
-                isShiftPressed == this.isShiftPressed && isAltPressed == this.isAltPressed &&
-                if (areCtrlAndWinReversedOnMac && isApple) isCtrlPressed == this.isWinPressed && isMetaPressed == this.isCtrlPressed
-                else isCtrlPressed == this.isCtrlPressed && isMetaPressed == this.isWinPressed
+            isShiftPressed == this.isShiftPressed && isAltPressed == this.isAltPressed &&
+            if (areCtrlAndWinReversedOnMac && isApple) isCtrlPressed == this.isWinPressed && isMetaPressed == this.isCtrlPressed
+            else isCtrlPressed == this.isCtrlPressed && isMetaPressed == this.isWinPressed
     }.asKeyboardEventFilter()
     val universalEventFilter = g@{ keyboardEvent: KeyboardEvent ->
         val (key, ignoreCase) = universalKeyboardEvent ?: return@g false
         val keyEventsAreEqual =
             key is UniversalKeyboardEvent.Backspace && keyboardEvent is UniversalKeyboardEvent.Backspace ||
-                    key is UniversalKeyboardEvent.Insert &&
-                    keyboardEvent is UniversalKeyboardEvent.Insert &&
-                    key.char.equals(keyboardEvent.char, ignoreCase = ignoreCase)
+                key is UniversalKeyboardEvent.Insert &&
+                keyboardEvent is UniversalKeyboardEvent.Insert &&
+                key.char.equals(keyboardEvent.char, ignoreCase = ignoreCase)
         keyEventsAreEqual &&
-                isAltPressed == externalKeyboardEventModifiers.isAltPressed && isShiftPressed == externalKeyboardEventModifiers.isShiftPressed &&
-                (if (areCtrlAndWinReversedOnMac && isApple) isCtrlPressed == externalKeyboardEventModifiers.isMetaPressed && isWinPressed == externalKeyboardEventModifiers.isCtrlPressed
-                else isCtrlPressed == externalKeyboardEventModifiers.isCtrlPressed && isWinPressed == externalKeyboardEventModifiers.isMetaPressed)
+            isAltPressed == externalKeyboardEventModifiers.isAltPressed && isShiftPressed == externalKeyboardEventModifiers.isShiftPressed &&
+            (if (areCtrlAndWinReversedOnMac && isApple) isCtrlPressed == externalKeyboardEventModifiers.isMetaPressed && isWinPressed == externalKeyboardEventModifiers.isCtrlPressed
+            else isCtrlPressed == externalKeyboardEventModifiers.isCtrlPressed && isWinPressed == externalKeyboardEventModifiers.isMetaPressed)
     }
     return { keyEventFilter(it) || universalEventFilter(it) }
 }
@@ -370,9 +369,9 @@ public data class DiagnosticsTooltipSettings(
     val scrollbarsVisibility: ScrollbarsChoice = ScrollbarsChoice.Both,
     val appearanceDelay: Duration = 400.milliseconds,
     val updateDelay: Duration = 600.milliseconds,
-    val disappearanceDelay: Duration = 600.milliseconds,
+    val disappearanceDelay: Duration = 1000.milliseconds,
     val shape: Shape = RoundedCornerShape(10.dp),
-    val hitBoxPadding: PaddingValues = PaddingValues(8.dp),
+    val offset: IntOffset = IntOffset(8, 8),
     val elevation: Dp = 4.dp,
     val maximumWidthRatio: Float = 0.7f,
     val paddng: PaddingValues = PaddingValues(8.dp),
@@ -695,12 +694,20 @@ public fun KotlinSourceEditor(
     var tooltipDiagnostics by remember { mutableStateOf(listOf<DiagnosticDescriptor>()) }
     var currentPointerOffset by remember { mutableStateOf(IntOffset(0, 0)) }
     var tooltipPointerOffset by remember { mutableStateOf(IntOffset(0, 0)) }
-    LaunchedEffect(cursorDiagnostics) {
-        val cursorDiagnosticsSet = cursorDiagnostics.toSet()
-        if (tooltipDiagnostics.any { it !in cursorDiagnosticsSet }) {
-            tooltipDiagnostics = emptyList()
+    var tooltipIsHovered by remember { mutableStateOf(false) }
+
+    LaunchedEffect(cursorDiagnostics, tooltipIsHovered) {
+        val delay = with(visualSettings.diagnosticsTooltipSettings) {
+            val oldEmpty = tooltipDiagnostics.isEmpty()
+            val newEmpty = cursorDiagnostics.isEmpty()
+            when {
+                tooltipDiagnostics == cursorDiagnostics -> return@LaunchedEffect
+                oldEmpty -> appearanceDelay
+                newEmpty -> if (tooltipIsHovered) return@LaunchedEffect else disappearanceDelay
+                else -> updateDelay
+            }
         }
-        delay(if (cursorDiagnostics.isEmpty()) visualSettings.diagnosticsTooltipSettings.appearanceDelay else visualSettings.diagnosticsTooltipSettings.updateDelay)
+        delay(delay)
         tooltipDiagnostics = cursorDiagnostics
         tooltipPointerOffset = currentPointerOffset
     }
@@ -804,23 +811,7 @@ public fun KotlinSourceEditor(
 
             val tooltipShape = visualSettings.diagnosticsTooltipSettings.shape
 
-            var cancelTooltip by remember { mutableStateOf<Job?>(null) }
-            fun onEnter() {
-                cancelTooltip?.cancel()
-                cancelTooltip = null
-            }
-
             val textFieldTopPadding by animateDpAsState(if (showFindAndReplace) 0.dp else topPadding)
-
-            fun onExit() {
-                if (cancelTooltip == null) {
-                    cancelTooltip = coroutineScope.launch {
-                        delay(visualSettings.diagnosticsTooltipSettings.disappearanceDelay)
-                        cursorDiagnostics = emptyList()
-                        cancelTooltip = null
-                    }
-                }
-            }
 
             val textFieldPadding = PaddingValues(
                 start = startPadding,
@@ -833,10 +824,12 @@ public fun KotlinSourceEditor(
                     AnimatedVisibility(sourceEditorFeaturesConfiguration.enableDiagnosticsTooltip) {
                         Box(
                             modifier = Modifier
-                                .pointerHoverIcon(PointerIcon.Text)
-                                .onPointerEvent(PointerEventType.Enter) { onEnter() }
-                                .onPointerEvent(PointerEventType.Exit) { onExit() }
-                                .padding(visualSettings.diagnosticsTooltipSettings.hitBoxPadding)
+                                .onPointerEvent(PointerEventType.Enter) {
+                                    tooltipIsHovered = true
+                                }
+                                .onPointerEvent(PointerEventType.Exit) {
+                                    tooltipIsHovered = false
+                                }
                         ) {
                             Tooltip(
                                 diagnostics = tooltipDiagnostics,
@@ -857,7 +850,7 @@ public fun KotlinSourceEditor(
                     }
                 },
                 delayMillis = 0, // because it is global TextField delay
-                offset = tooltipPointerOffset,
+                offset = tooltipPointerOffset + visualSettings.diagnosticsTooltipSettings.offset,
                 modifier = plainSourceEditorModifier.onPointerEvent(PointerEventType.Move) {
                     val newOffset =
                         it.changes.first().position.let { (x, y) -> IntOffset(x.toInt(), y.toInt()) }
@@ -890,8 +883,6 @@ public fun KotlinSourceEditor(
                     },
                     basicTextFieldModifier = basicTextFieldModifier
                         .focusRequester(sourceCodeFocusRequester)
-                        .onPointerEvent(PointerEventType.Enter) { onEnter() }
-                        .onPointerEvent(PointerEventType.Exit) { onExit() }
                         .onSizeChanged {
                             // For some reason, checking maxValue > 0 is not enough during appearance of FindAndReplace
                             val pureHight = textSize.height * codeTextFieldState.lineOffsets.size
