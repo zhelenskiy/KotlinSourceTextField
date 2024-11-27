@@ -1,2 +1,2 @@
 ${PODS_ROOT}/Target Support Files/Pods-sampleIos-sampleIosUITests/Pods-sampleIos-sampleIosUITests-resources.sh
-${PODS_ROOT}/../../sample/build/compose/ios/ComposeApp/compose-resources
+${PODS_ROOT}/../../sample/build/compose/cocoapods/compose-resources

@@ -366,7 +366,7 @@ internal fun FindAndReplacePopup(
                             },
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.None,
-                                autoCorrect = false,
+                                autoCorrectEnabled = false,
                                 keyboardType = keyboardType,
                                 imeAction = if (popupState.showReplace) ImeAction.Next else ImeAction.Search
                             ),
@@ -508,7 +508,7 @@ internal fun FindAndReplacePopup(
                                 },
                                 keyboardOptions = KeyboardOptions(
                                     capitalization = KeyboardCapitalization.None,
-                                    autoCorrect = false,
+                                    autoCorrectEnabled = false,
                                     keyboardType = keyboardType,
                                     imeAction = ImeAction.Go,
                                 ),

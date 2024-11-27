@@ -1,6 +1,6 @@
 {
   "name": "sample",
-  "version": "0.0.1",
+  "version": "0.0.17",
   "homepage": "h",
   "source": {
     "http": ""
@@ -26,7 +26,7 @@
     }
   ],
   "resources": [
-    "build/compose/ios/ComposeApp/compose-resources"
+    "build/compose/cocoapods/compose-resources"
   ],
   "platforms": {
     "osx": null,
